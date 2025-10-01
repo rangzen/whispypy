@@ -1,0 +1,16 @@
+[project]
+name = "whispypy"
+version = "0.1.0"
+description = "A signal-controlled audio transcription daemon using OpenAI Whisper"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "openai-whisper>=20250625",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.18.2",
+    "ruff>=0.13.2",
+    "types-requests>=2.32.4.20250913",
+]
