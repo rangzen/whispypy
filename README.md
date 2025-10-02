@@ -274,4 +274,4 @@ The transcribed text is automatically copied to your clipboard using the appropr
 
 ## License
 
-[Add your license information here]
+Do as you wish. Have fun.
