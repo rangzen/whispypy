@@ -76,6 +76,12 @@ uv sync
    kill -SIGINT <daemon_pid>
    ```
 
+4. **Add a shortcut key:**
+
+   Use your desktop environment's keyboard settings to bind a key combination to run `./send_signal.sh` or `pkill -SIGUSR2 -f whispypy-daemon.py`.
+
+On Ubuntu, you can create a custom shortcut in Settings > Keyboard > Keyboard Shortcuts > View and Customize Shortcuts > Custom Shortcuts. Click the "+" button, name it "Whispypy Toggle Recording", and set the command to the full path of `send_signal.sh` or the pkill command. Then assign your desired key combination, e.g., Ctrl+Shit+t (like talk).
+
 ### Step-by-Step Guide
 
 #### Step 1: Find Your Audio Device
