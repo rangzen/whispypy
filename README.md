@@ -19,7 +19,7 @@ This project is a Python rewrite of the original [whispy](https://github.com/daa
 - 🤖 Multiple Whisper model support
 - 📋 Automatic clipboard integration (Wayland/X11)
 - 🔧 Configurable audio input devices with persistent configuration
-- 📝 Optional text output and audio file retention
+- 📝 Optional audio file retention
 
 ## Requirements
 
