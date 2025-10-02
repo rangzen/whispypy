@@ -32,8 +32,8 @@ This project is a Python rewrite of the original [whispy](https://github.com/daa
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd whispy-go2py
+git clone git@github.com:rangzen/whispypy.git
+cd whispypy
 
 # Install dependencies using UV (recommended)
 uv sync
