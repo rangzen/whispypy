@@ -203,11 +203,19 @@ def play_system_beep() -> None:
             except (subprocess.CalledProcessError, FileNotFoundError):
                 # If all else fails, try writing bell character directly to terminal
                 try:
-                    sys.stdout.write('\a')
+                    sys.stdout.write("\a")
                     sys.stdout.flush()
                     logging.debug("System beep played via stdout bell character")
                 except Exception:
                     logging.debug("Could not play system beep")
+
+
+def play_double_beep() -> None:
+    """Play a double beep sound to indicate completion."""
+    play_system_beep()
+    time.sleep(0.2)  # Short pause between beeps
+    play_system_beep()
+    logging.debug("Double beep played")
 
 
 def copy_to_clipboard(text: str) -> bool:
@@ -363,7 +371,9 @@ class WhispypyDaemon:
     def _handle_sigusr2(self, signum: int, frame: Any) -> None:
         """Handle SIGUSR2 signal to toggle recording state."""
         try:
-            logging.info(f"Received SIGUSR2 signal! Current recording state: {self.recording}")
+            logging.info(
+                f"Received SIGUSR2 signal! Current recording state: {self.recording}"
+            )
 
             if not self.recording:
                 self._start_recording()
@@ -440,6 +450,9 @@ class WhispypyDaemon:
 
         # Copy text to clipboard
         copy_to_clipboard(text)
+
+        # Play double beep to indicate transcription is ready in clipboard
+        play_double_beep()
 
     def run(self) -> None:
         """Run the daemon main loop."""
