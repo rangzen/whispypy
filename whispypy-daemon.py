@@ -435,11 +435,14 @@ class WhispypyDaemon:
 
         # Transcribe with Whisper
         logging.info("Transcribing with Whisper...")
+        transcription_start = time.time()
         result = self.model.transcribe(
             samples, fp16=False, language=None, task="transcribe"
         )
+        transcription_time = time.time() - transcription_start
 
         text = result["text"].strip()
+        logging.info(f"Transcription completed in {transcription_time:.2f} seconds")
         logging.info(f"Transcription result: '{text}'")
 
         if self.print_text:
