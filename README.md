@@ -8,6 +8,10 @@ A signal-controlled audio transcription daemon using OpenAI Whisper. Record audi
 
 This project is a Python rewrite of the original [whispy](https://github.com/daaku/whispy) by [@daaku](https://github.com/daaku). The name "whispypy" comes from the original "whispy" + "py" for Python. Special thanks to daaku for the original implementation and inspiration.
 
+![whispypy logo](whispypy-logo.png)
+
+> Whispypy sounds like "ouistiti" (French for marmoset)
+
 ## Features
 
 - 🎙️ Signal-controlled recording (start/stop with SIGUSR2)
