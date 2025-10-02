@@ -415,7 +415,8 @@ class WhispypyDaemon:
         # Print PID for easy signal sending
         pid = os.getpid()
         logging.info(f"Script PID: {pid}")
-        logging.info(f"To send signal from another terminal: kill -USR2 {pid}")
+        logging.info(f"To send signal start/stop from another terminal: kill -USR2 {pid}")
+        logging.info(f"To send signal exit from another terminal: kill -SIGINT {pid}")
         logging.info(f"Using audio device: {self.device_name}")
 
         # Validate device before starting
