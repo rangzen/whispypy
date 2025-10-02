@@ -4,7 +4,7 @@ A signal-controlled audio transcription daemon using OpenAI Whisper. Record audi
 
 > **Note:** This tool is designed for Linux systems only.
 
-## About
+## Original Project
 
 This project is a Python rewrite of the original [whispy](https://github.com/daaku/whispy) by [@daaku](https://github.com/daaku). The name "whispypy" comes from the original "whispy" + "py" for Python. Special thanks to daaku for the original implementation and inspiration.
 
