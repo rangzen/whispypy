@@ -184,6 +184,32 @@ def load_audio_f32(filepath: Union[str, Path]) -> np.ndarray:
     return np.array(floats, dtype=np.float32)
 
 
+def play_system_beep() -> None:
+    """Play a system beep sound."""
+    try:
+        # Try using printf with bell character (works on most terminals)
+        subprocess.run(["printf", "\\a"], check=True)
+        logging.debug("System beep played via printf")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        try:
+            # Fallback to echo
+            subprocess.run(["echo", "-e", "\\a"], check=True)
+            logging.debug("System beep played via echo")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            try:
+                # Fallback to beep command if available
+                subprocess.run(["beep"], check=True)
+                logging.debug("System beep played via beep command")
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # If all else fails, try writing bell character directly to terminal
+                try:
+                    sys.stdout.write('\a')
+                    sys.stdout.flush()
+                    logging.debug("System beep played via stdout bell character")
+                except Exception:
+                    logging.debug("Could not play system beep")
+
+
 def copy_to_clipboard(text: str) -> bool:
     """Copy text to clipboard using the appropriate tool for the current display server."""
     # Check if we're on Wayland
@@ -353,6 +379,7 @@ class WhispypyDaemon:
     def _start_recording(self) -> None:
         """Start audio recording."""
         logging.info("Starting recording...")
+        play_system_beep()
         self.pw_record_proc = subprocess.Popen(
             [
                 "pw-record",
@@ -371,6 +398,7 @@ class WhispypyDaemon:
     def _stop_recording_and_transcribe(self) -> None:
         """Stop recording and perform transcription."""
         logging.info("Stopping recording...")
+        play_system_beep()
         if self.pw_record_proc:
             self.pw_record_proc.terminate()
             self.pw_record_proc.wait()
