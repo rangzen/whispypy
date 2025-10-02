@@ -1,6 +1,6 @@
 # whispypy
 
-A signal-controlled audio transcription daemon using OpenAI Whisper. Record audio on-demand and get real-time transcription with automatic clipboard integration.
+A signal-controlled audio transcription daemon in Python powered by locally-running OpenAI Whisper. Record audio on demand with system signals and get transcribed text instantly copied to your clipboard.
 
 > **Note:** This tool is designed for Linux systems only.
 
