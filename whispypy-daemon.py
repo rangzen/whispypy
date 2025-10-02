@@ -282,7 +282,10 @@ class WhispypyDaemon:
 
         # Load Whisper model
         logging.info(f"Loading Whisper model from {model_path}...")
+        model_load_start = time.time()
         self.model = whisper.load_model(model_path)
+        model_load_time = time.time() - model_load_start
+        logging.info(f"Whisper model loaded in {model_load_time:.2f} seconds")
 
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._handle_sigint)
@@ -334,7 +337,7 @@ class WhispypyDaemon:
     def _handle_sigusr2(self, signum: int, frame: Any) -> None:
         """Handle SIGUSR2 signal to toggle recording state."""
         try:
-            logging.info(f"Received SIGUSR2 signal! Recording state: {self.recording}")
+            logging.info(f"Received SIGUSR2 signal! Current recording state: {self.recording}")
 
             if not self.recording:
                 self._start_recording()
@@ -415,7 +418,9 @@ class WhispypyDaemon:
         # Print PID for easy signal sending
         pid = os.getpid()
         logging.info(f"Script PID: {pid}")
-        logging.info(f"To send signal start/stop from another terminal: kill -USR2 {pid}")
+        logging.info(
+            f"To send signal start/stop from another terminal: kill -USR2 {pid}"
+        )
         logging.info(f"To send signal exit from another terminal: kill -SIGINT {pid}")
         logging.info(f"Using audio device: {self.device_name}")
 
