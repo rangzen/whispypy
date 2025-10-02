@@ -298,12 +298,10 @@ class WhispypyDaemon:
         self,
         model_path: str,
         device_name: str,
-        print_text: bool = False,
         keep_audio: bool = False,
     ):
         self.model_path = model_path
         self.device_name = device_name
-        self.print_text = print_text
         self.keep_audio = keep_audio
 
         # Create temporary file for audio recording
@@ -445,9 +443,6 @@ class WhispypyDaemon:
         logging.info(f"Transcription completed in {transcription_time:.2f} seconds")
         logging.info(f"Transcription result: '{text}'")
 
-        if self.print_text:
-            print(text)
-
         if not self.keep_audio:
             self.temp_audio_file.unlink(missing_ok=True)
 
@@ -508,9 +503,6 @@ def main() -> None:
         help="Audio input device name. If not provided, will try to load from XDG config (~/.config/whispypy/config.conf). Use test_audio_devices.py to find working devices.",
     )
     parser.add_argument(
-        "--print-text", action="store_true", help="Print transcribed text to stdout"
-    )
-    parser.add_argument(
         "--keep-audio",
         action="store_true",
         help="Keep the temporary audio file after transcription",
@@ -554,7 +546,6 @@ def main() -> None:
     daemon = WhispypyDaemon(
         model_path=args.model_path,
         device_name=device_name,
-        print_text=args.print_text,
         keep_audio=args.keep_audio,
     )
 
