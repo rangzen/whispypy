@@ -46,7 +46,7 @@ cd whispypy
 # Install dependencies using UV (recommended)
 uv sync
 
-# Or install UV first if you don't have it
+# Install UV first if you don't have it installed
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
 ```
@@ -56,7 +56,7 @@ uv sync
 To use NVIDIA Parakeet for transcription, install the NeMo toolkit:
 
 ```bash
-# Install PyTorch and related packages for CPU-only systems (or CUDA you have a GPU)
+# Install PyTorch and related packages for CPU-only systems (or with CUDA if you have a GPU)
 uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 # Install NeMo toolkit with ASR support (required for Parakeet)
 uv pip install nemo_toolkit[asr]
@@ -65,7 +65,7 @@ uv pip install onnx==1.18.0
 ```
 
 > **Note:** NeMo installation is large (~2GB) and may take some time. Whisper works out of the box without additional dependencies.
-See https://github.com/onnx/onnx/issues/7249 for ONNX installation issues.
+> See https://github.com/onnx/onnx/issues/7249 for ONNX installation issues.
 
 ## Usage
 
@@ -109,7 +109,7 @@ See https://github.com/onnx/onnx/issues/7249 for ONNX installation issues.
 
 On Ubuntu, you can create a custom shortcut in Settings > Keyboard > Keyboard Shortcuts > View and Customize Shortcuts > Custom Shortcuts. Click the "+" button, name it "Whispypy Toggle Recording", and set the command to the full path of `send_signal.sh` or the pkill command.
 E.g. for me, `sh -c -- "~/sources/whispypy/send_signal.sh"`.
-Then assign your desired key combination, e.g., Ctrl+Shit+t (t like talk).
+Then assign your desired key combination, e.g., Ctrl+Shift+t (t like talk).
 ### Step-by-Step Guide
 
 #### Step 1: Find Your Audio Device
