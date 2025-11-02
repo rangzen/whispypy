@@ -2,6 +2,7 @@
 
 import argparse
 import configparser
+import importlib.util
 import logging
 import os
 import sys
@@ -43,7 +44,7 @@ PROCESS_TERMINATION_TIMEOUT = 2.0  # seconds - Timeout for process cleanup
 CONFIG_FILE = get_config_file()
 
 # File paths (will be replaced with proper temp files)
-TEMP_AUDIO_FILENAME = "whispy_recording.au"  # Filename for temporary audio
+TEMP_AUDIO_FILENAME = "whispy_recording"  # Base filename for temporary audio (extension will be added based on engine)
 
 
 class ConfigManager:
@@ -292,42 +293,76 @@ def managed_subprocess(
 
 
 class WhispypyDaemon:
-    """Signal-controlled audio transcription daemon using OpenAI Whisper."""
+    """Signal-controlled audio transcription daemon using OpenAI Whisper or NVIDIA Parakeet."""
 
     def __init__(
         self,
         model_path: str,
         device_name: str,
+        engine: str = "whisper",
         keep_audio: bool = False,
     ):
         self.model_path = model_path
         self.device_name = device_name
+        self.engine = engine
         self.keep_audio = keep_audio
 
-        # Create temporary file for audio recording
-        self.temp_audio_file = Path(tempfile.gettempdir()) / TEMP_AUDIO_FILENAME
+        # Create temporary file for audio recording with appropriate extension
+        audio_extension = ".wav" if engine == "parakeet" else ".au"
+        self.temp_audio_file = Path(tempfile.gettempdir()) / (
+            TEMP_AUDIO_FILENAME + audio_extension
+        )
 
         # State
         self.recording = False
         self.running = True
         self.pw_record_proc: Optional[subprocess.Popen[bytes]] = None
 
-        # Load Whisper model
-        logging.info(f"Loading Whisper model from {model_path}...")
-        model_load_start = time.time()
-        self.model = whisper.load_model(model_path)
-        model_load_time = time.time() - model_load_start
-        logging.info(f"Whisper model loaded in {model_load_time:.2f} seconds")
+        # Load the appropriate model
+        if self.engine == "whisper":
+            self._load_whisper_model()
+        elif self.engine == "parakeet":
+            self._load_parakeet_model()
+        else:
+            raise ValueError(f"Unsupported engine: {self.engine}")
 
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._handle_sigint)
         signal.signal(signal.SIGUSR2, self._handle_sigusr2)
 
+    def _load_whisper_model(self) -> None:
+        """Load Whisper model."""
+        logging.info(f"Loading Whisper model from {self.model_path}...")
+        model_load_start = time.time()
+        self.model = whisper.load_model(self.model_path)
+        model_load_time = time.time() - model_load_start
+        logging.info(f"Whisper model loaded in {model_load_time:.2f} seconds")
+
+    def _load_parakeet_model(self) -> None:
+        """Load Parakeet model."""
+        try:
+            import nemo.collections.asr as nemo_asr
+        except ImportError:
+            raise ImportError(
+                "Parakeet (NeMo) is not available. Please see README for installation instructions."
+            )
+
+        logging.info(f"Loading Parakeet model from {self.model_path}...")
+        model_load_start = time.time()
+        self.model = nemo_asr.models.ASRModel.from_pretrained(
+            model_name=self.model_path
+        )
+        model_load_time = time.time() - model_load_start
+        logging.info(f"Parakeet model loaded in {model_load_time:.2f} seconds")
+
     def validate_device(self) -> bool:
         """Validate that the audio device exists and is accessible."""
         try:
             # Test device by attempting a very short recording
-            with tempfile.NamedTemporaryFile(suffix=".au", delete=False) as test_file:
+            audio_extension = ".wav" if self.engine == "parakeet" else ".au"
+            with tempfile.NamedTemporaryFile(
+                suffix=audio_extension, delete=False
+            ) as test_file:
                 test_file_path = test_file.name
 
             # Use managed_subprocess for proper cleanup
@@ -426,20 +461,30 @@ class WhispypyDaemon:
             logging.warning("Audio file is empty!")
             return
 
-        # Load audio samples
-        logging.info("Loading audio samples...")
-        samples = load_audio_f32(self.temp_audio_file)
-        logging.info(f"Loaded {len(samples)} audio samples")
+        # Load audio samples for Whisper or keep file path for Parakeet
+        if self.engine == "whisper":
+            logging.info("Loading audio samples...")
+            samples = load_audio_f32(self.temp_audio_file)
+            logging.info(f"Loaded {len(samples)} audio samples")
 
-        # Transcribe with Whisper
-        logging.info("Transcribing with Whisper...")
+        # Transcribe with appropriate engine
+        logging.info(f"Transcribing with {self.engine.capitalize()}...")
         transcription_start = time.time()
-        result = self.model.transcribe(
-            samples, fp16=False, language=None, task="transcribe"
-        )
+
+        if self.engine == "whisper":
+            result = self.model.transcribe(
+                samples, fp16=False, language=None, task="transcribe"
+            )
+            text = result["text"].strip()
+        elif self.engine == "parakeet":
+            # Parakeet expects a list of file paths
+            result = self.model.transcribe([str(self.temp_audio_file)])
+            text = result[0].text.strip()
+        else:
+            raise ValueError(f"Unsupported engine: {self.engine}")
+
         transcription_time = time.time() - transcription_start
 
-        text = result["text"].strip()
         logging.info(f"Transcription completed in {transcription_time:.2f} seconds")
         logging.info(f"Transcription result: '{text}'")
 
@@ -462,6 +507,7 @@ class WhispypyDaemon:
         )
         logging.info(f"To send signal exit from another terminal: kill -SIGINT {pid}")
         logging.info(f"Using audio device: {self.device_name}")
+        logging.info(f"Using transcription engine: {self.engine}")
 
         # Validate device before starting
         if not self.validate_device():
@@ -488,13 +534,20 @@ class WhispypyDaemon:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Whisper transcription with signal control"
+        description="Audio transcription with signal control using Whisper or Parakeet"
     )
     parser.add_argument(
         "model_path",
         nargs="?",
         default="base",
-        help="Path to the Whisper model or model name. Available models: tiny, base, small, medium, large, large-v2, large-v3 (default: base)",
+        help="Path to the model or model name. For Whisper: tiny, base, small, medium, large, large-v2, large-v3. For Parakeet: nvidia/parakeet-tdt-0.6b-v3 (default: base)",
+    )
+    parser.add_argument(
+        "--engine",
+        "-e",
+        choices=["whisper", "parakeet"],
+        default="whisper",
+        help="Transcription engine to use (default: whisper)",
     )
     parser.add_argument(
         "--device",
@@ -521,6 +574,13 @@ def main() -> None:
         handlers=[logging.StreamHandler(sys.stderr)],
     )
 
+    # Validate engine availability
+    if args.engine == "parakeet":
+        if importlib.util.find_spec("nemo.collections.asr") is None:
+            logging.error("Parakeet engine selected but NeMo is not available.")
+            logging.error("Please see README for installation instructions.")
+            sys.exit(1)
+
     # Handle device configuration
     config_manager = ConfigManager()
 
@@ -546,6 +606,7 @@ def main() -> None:
     daemon = WhispypyDaemon(
         model_path=args.model_path,
         device_name=device_name,
+        engine=args.engine,
         keep_audio=args.keep_audio,
     )
 

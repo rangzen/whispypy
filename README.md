@@ -1,6 +1,6 @@
 # whispypy
 
-A signal-controlled audio transcription daemon in Python powered by locally-running OpenAI Whisper. Record audio on demand with system signals and get transcribed text instantly copied to your clipboard.
+A signal-controlled audio transcription daemon in Python powered by locally-running OpenAI Whisper or NVIDIA Parakeet. Record audio on demand with system signals and get transcribed text instantly copied to your clipboard.
 
 > **Note:** This tool is designed for Linux systems only.
 
@@ -16,7 +16,9 @@ This project is a Python rewrite of the original [whispy](https://github.com/daa
 
 - 🎙️ Signal-controlled recording (start/stop with SIGUSR2)
 - 🎯 Audio device discovery and testing
-- 🤖 Multiple Whisper model support
+- 🤖 Multiple transcription engines:
+  - **OpenAI Whisper** (default): Multiple model sizes (tiny to large-v3)
+  - **NVIDIA Parakeet**: High-performance ASR model (nvidia/parakeet-tdt-0.6b-v3)
 - 📋 Automatic clipboard integration (Wayland/X11)
 - 🔧 Configurable audio input devices with persistent configuration
 - 📝 Optional audio file retention
@@ -24,7 +26,9 @@ This project is a Python rewrite of the original [whispy](https://github.com/daa
 ## Requirements
 
 - Python 3.13+
-- OpenAI Whisper
+- **Transcription engines:**
+  - OpenAI Whisper (default, always available)
+  - NVIDIA Parakeet (optional): Requires `nemo_toolkit[asr]`
 - **Audio system:**
   - PipeWire (preferred): `pw-record`, `pw-cli`
   - ALSA (fallback): `arecord`
@@ -47,6 +51,22 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
 ```
 
+### Optional: Install Parakeet Engine
+
+To use NVIDIA Parakeet for transcription, install the NeMo toolkit:
+
+```bash
+# Install PyTorch and related packages for CPU-only systems (or CUDA you have a GPU)
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+# Install NeMo toolkit with ASR support (required for Parakeet)
+uv pip install nemo_toolkit[asr]
+# Install specific ONNX version to avoid compatibility issues
+uv pip install onnx==1.18.0
+```
+
+> **Note:** NeMo installation is large (~2GB) and may take some time. Whisper works out of the box without additional dependencies.
+See https://github.com/onnx/onnx/issues/7249 for ONNX installation issues.
+
 ## Usage
 
 ### Quick Start
@@ -60,11 +80,14 @@ uv sync
 2. **Start the daemon:**
 
    ```bash
-   # First time - saves device to config file
+   # Default (Whisper engine) - first time saves device to config file
    uv run python whispypy-daemon.py -d "your_device_name"
-   
+
    # Subsequent runs - automatically uses saved device
    uv run python whispypy-daemon.py
+
+   # Use Parakeet engine (requires NeMo installation)
+   uv run python whispypy-daemon.py --engine parakeet nvidia/parakeet-tdt-0.6b-v3 -d "your_device_name"
    ```
 
 3. **Control recording:**
@@ -72,10 +95,10 @@ uv sync
    ```bash
    # Start/stop recording (manual)
    kill -USR2 <daemon_pid>
-   
+
    # Or use the convenience script (automatic PID detection)
    ./send_signal.sh
-   
+
    # Stop daemon
    kill -SIGINT <daemon_pid>
    ```
@@ -123,12 +146,12 @@ Example output:
     alsa_input.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__hw_sofhdadsp_6__source
 ```
 
-#### Step 2: Run Whisper Daemon with Your Device
+#### Step 2: Run Daemon with Your Device
 
-Copy the working device name from step 1 and use it with the whisper daemon:
+Copy the working device name from step 1 and use it with the daemon:
 
 ```bash
-# First time - specify device and save to config
+# First time - specify device and save to config (default Whisper engine)
 uv run python whispypy-daemon.py --device "alsa_input.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__hw_sofhdadsp_6__source"
 
 # Subsequent runs - device loaded automatically from config
@@ -137,11 +160,14 @@ uv run python whispypy-daemon.py
 # Or with short flag for first time
 uv run python whispypy-daemon.py -d "alsa_input.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__hw_sofhdadsp_6__source"
 
-# With specific model (loads device from config)
-uv run python whispypy-daemon.py base
+# Use Parakeet engine (requires NeMo installation)
+uv run python whispypy-daemon.py --engine parakeet nvidia/parakeet-tdt-0.6b-v3 -d "your_device_name"
+
+# With specific Whisper model (loads device from config)
+uv run python whispypy-daemon.py large-v3
 
 # With additional options (loads device from config)
-uv run python whispypy-daemon.py --print-text --keep-audio
+uv run python whispypy-daemon.py --keep-audio
 
 # Update to different device
 uv run python whispypy-daemon.py --device "new_device_name_here"
@@ -157,6 +183,7 @@ The daemon will show its PID and wait for signals:
 Script PID: 12345
 To send signal from another terminal: kill -USR2 12345
 Using audio device: alsa_input.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__hw_sofhdadsp_6__source
+Using transcription engine: whisper
 Ready. Send SIGUSR2 to start/stop recording.
 ```
 
@@ -187,15 +214,16 @@ kill -SIGINT 12345
 #### whispypy-daemon.py
 
 ```text
-usage: whispypy-daemon.py [-h] [--device DEVICE] [--print-text] [--keep-audio] [model_path]
+usage: whispypy-daemon.py [-h] [--engine {whisper,parakeet}] [--device DEVICE] [--keep-audio] [--verbose] [model_path]
 
 Arguments:
-  model_path           Whisper model (tiny, base, small, medium, large, large-v2, large-v3) - default: base
-  
+  model_path           Model path or name. For Whisper: tiny, base, small, medium, large, large-v2, large-v3. For Parakeet: nvidia/parakeet-tdt-0.6b-v3 (default: base)
+
 Options:
-  --device, -d DEVICE  Audio input device name. If not provided, loads from ~/.whispypy.conf
-  --print-text         Print transcribed text to stdout
-  --keep-audio         Keep temporary audio files
+  --engine, -e {whisper,parakeet}  Transcription engine to use (default: whisper)
+  --device, -d DEVICE              Audio input device name. If not provided, loads from ~/.config/whispypy/config.conf
+  --keep-audio                     Keep temporary audio files
+  --verbose, -v                    Enable verbose logging
 ```
 
 ### Examples
@@ -213,17 +241,36 @@ uv run python whispypy-daemon.py -d "your_working_device_name"
 uv run python whispypy-daemon.py
 ```
 
+#### Engine Selection
+
+```bash
+# Default Whisper engine with base model
+uv run python whispypy-daemon.py
+
+# Whisper with larger model
+uv run python whispypy-daemon.py large-v3
+
+# Parakeet engine (requires NeMo installation)
+uv run python whispypy-daemon.py --engine parakeet nvidia/parakeet-tdt-0.6b-v3
+
+# Parakeet with device specification (first time)
+uv run python whispypy-daemon.py -e parakeet nvidia/parakeet-tdt-0.6b-v3 -d "your_device"
+```
+
 #### Advanced Usage
 
 ```bash
 # First setup with larger model (saves device config)
-uv run python whispypy-daemon.py large-v3 -d "your_device" --print-text
+uv run python whispypy-daemon.py large-v3 -d "your_device" --verbose
 
 # Subsequent runs with same config
-uv run python whispypy-daemon.py large-v3 --print-text
+uv run python whispypy-daemon.py large-v3 --verbose
 
 # Keep audio files for debugging (uses saved device)
 uv run python whispypy-daemon.py --keep-audio
+
+# Parakeet with verbose logging
+uv run python whispypy-daemon.py -e parakeet nvidia/parakeet-tdt-0.6b-v3 --verbose
 ```
 
 ### Configuration File
@@ -255,13 +302,36 @@ rm ~/.whispypy.conf
 
 ## Troubleshooting
 
-If the whisper daemon fails to record:
+### General Issues
+
+If the daemon fails to record:
 
 1. Make sure you used the exact device name from `uv run python test_audio_devices.py`
 2. Verify the device is not in use by another application
 3. Check audio permissions
 4. Re-run `uv run python test_audio_devices.py` to confirm the device still works
 5. Make sure `send_signal.sh` is executable: `chmod +x send_signal.sh`
+
+### Engine-Specific Issues
+
+#### Whisper Engine
+- **Model download fails**: Check internet connection; models are downloaded on first use
+- **Slow transcription**: Try smaller models (`tiny`, `base`) for faster processing
+- **Memory issues**: Use smaller models or check available RAM
+
+#### Parakeet Engine
+- **Model download timeout**: Parakeet models are large (~600MB); ensure stable internet connection
+- **CUDA warnings**: Parakeet will use CPU if CUDA isn't available (slower but functional)
+- **Import warnings**: NeMo may show warnings about missing optional dependencies; these are usually harmless
+
+### Audio Format Issues
+The daemon automatically handles different audio formats:
+- **Whisper**: Uses raw f32 audio data (`.au` files)
+- **Parakeet**: Uses standard audio files (`.wav` files)
+
+### Performance Comparison
+- **Whisper**: Better for general use, multiple languages, smaller models available
+- **Parakeet**: Optimized for English, potentially faster with GPU acceleration
 
 The transcribed text is automatically copied to your clipboard using the appropriate tool for your display server (wl-copy for Wayland, xclip/xsel for X11).
 
