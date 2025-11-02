@@ -2,8 +2,8 @@
 
 # Helper script to send SIGUSR2 to whispypy-daemon.py
 
-# Find the PID of the whispypy-daemon.py process
-PID=$(pgrep -f "whispypy-daemon.py")
+# Find the PID of the whispypy-daemon.py process (exclude uv wrapper)
+PID=$(ps aux | grep "whispypy-daemon.py" | grep -v "uv run" | grep -v grep | awk '{print $2}' | head -1)
 
 if [ -z "$PID" ]; then
     echo "Error: whispypy-daemon.py process not found!"
