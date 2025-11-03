@@ -19,8 +19,8 @@ import numpy as np
 import whisper
 
 # Audio file constants
-BEEP_START_FILENAME = "BEEPTimer_Montre_numerique_bip_2_ID 2254_LS.wav"
-BEEP_COMPLETE_FILENAME = "BEEPTimer_Montre_numerique_bip_1_ID 2255_LS.wav"
+BEEP_START_FILENAME = "BEEPTimer_Montre_numerique_bip_2_ID_2255_LS.wav"
+BEEP_COMPLETE_FILENAME = "BEEPTimer_Montre_numerique_bip_1_ID_2254_LS.wav"
 
 # Audio recording constants
 SAMPLE_RATE = 16000  # Hz - Whisper's expected sample rate
