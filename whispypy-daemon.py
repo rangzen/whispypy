@@ -2,21 +2,21 @@
 
 import argparse
 import configparser
+from contextlib import contextmanager
 import importlib.util
 import logging
 import os
-import sys
+from pathlib import Path
 import signal
-import subprocess
 import struct
-import whisper
+import subprocess
+import sys
 import tempfile
 import time
-from contextlib import contextmanager
-from pathlib import Path
 from typing import Any, Generator, Optional, Union
-import numpy as np
 
+import numpy as np
+import whisper
 
 # Audio file constants
 BEEP_START_FILENAME = "BEEPTimer_Montre_numerique_bip_2_ID 2254_LS.wav"

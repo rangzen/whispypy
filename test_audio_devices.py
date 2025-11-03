@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
+from pathlib import Path
+import re
+import struct
 import subprocess
 import time
-import struct
-import re
-from pathlib import Path
-from typing import Dict, List, Tuple, Union, TypedDict
+from typing import Dict, List, Tuple, TypedDict, Union
 
 
 class WorkingDevice(TypedDict):
