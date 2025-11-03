@@ -9,23 +9,18 @@ import sys
 import signal
 import subprocess
 import struct
+import whisper
 import tempfile
 import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, Optional, Union
-
 import numpy as np
-import whisper
 
 
-def get_config_file() -> Path:
-    """Get the configuration file path following XDG Base Directory specification."""
-    xdg_config_home = os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")
-    config_dir = Path(xdg_config_home) / "whispypy"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    return config_dir / "config.conf"
-
+# Audio file constants
+BEEP_START_FILENAME = "BEEPTimer_Montre_numerique_bip_2_ID 2254_LS.wav"
+BEEP_COMPLETE_FILENAME = "BEEPTimer_Montre_numerique_bip_1_ID 2255_LS.wav"
 
 # Audio recording constants
 SAMPLE_RATE = 16000  # Hz - Whisper's expected sample rate
@@ -40,11 +35,20 @@ RMS_SILENCE_THRESHOLD = 0.001  # Minimum RMS to distinguish signal from silence
 DEVICE_TEST_DURATION = 1.0  # seconds - Duration for device validation test
 PROCESS_TERMINATION_TIMEOUT = 2.0  # seconds - Timeout for process cleanup
 
-# Configuration
-CONFIG_FILE = get_config_file()
-
 # File paths (will be replaced with proper temp files)
 TEMP_AUDIO_FILENAME = "whispy_recording"  # Base filename for temporary audio (extension will be added based on engine)
+
+
+def get_config_file() -> Path:
+    """Get the configuration file path following XDG Base Directory specification."""
+    xdg_config_home = os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")
+    config_dir = Path(xdg_config_home) / "whispypy"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir / "config.conf"
+
+
+# Configuration
+CONFIG_FILE = get_config_file()
 
 
 class ConfigManager:
@@ -185,38 +189,64 @@ def load_audio_f32(filepath: Union[str, Path]) -> np.ndarray:
     return np.array(floats, dtype=np.float32)
 
 
-def play_system_beep() -> None:
-    """Play a system beep sound."""
+def _play_beep_file(filename: str, beep_type: str) -> None:
+    """Play a beep sound file with fallback options.
+
+    Args:
+        filename: The beep sound filename (from the assets directory)
+        beep_type: Description of the beep type for logging (e.g., "system", "completion")
+    """
+    # Construct path to beep sound file
+    beep_file = Path(__file__).parent / "assets" / filename
+
     try:
-        # Try using printf with bell character (works on most terminals)
-        subprocess.run(["printf", "\\a"], check=True)
-        logging.debug("System beep played via printf")
+        # Play the beep sound file
+        subprocess.run(
+            ["aplay", str(beep_file)],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        logging.debug(f"{beep_type.capitalize()} beep played via aplay")
     except (subprocess.CalledProcessError, FileNotFoundError):
         try:
-            # Fallback to echo
-            subprocess.run(["echo", "-e", "\\a"], check=True)
-            logging.debug("System beep played via echo")
+            # Fallback to paplay (PulseAudio)
+            subprocess.run(
+                ["paplay", str(beep_file)],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            logging.debug(f"{beep_type.capitalize()} beep played via paplay")
         except (subprocess.CalledProcessError, FileNotFoundError):
             try:
-                # Fallback to beep command if available
-                subprocess.run(["beep"], check=True)
-                logging.debug("System beep played via beep command")
+                # Fallback to pw-play (PipeWire)
+                subprocess.run(
+                    ["pw-play", str(beep_file)],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                logging.debug(f"{beep_type.capitalize()} beep played via pw-play")
             except (subprocess.CalledProcessError, FileNotFoundError):
-                # If all else fails, try writing bell character directly to terminal
+                # Final fallback to terminal beep
                 try:
-                    sys.stdout.write("\a")
-                    sys.stdout.flush()
-                    logging.debug("System beep played via stdout bell character")
-                except Exception:
-                    logging.debug("Could not play system beep")
+                    subprocess.run(["printf", "\\a"], check=True)
+                    logging.debug(
+                        f"{beep_type.capitalize()} beep played via printf (fallback)"
+                    )
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    logging.debug(f"Could not play {beep_type} beep")
 
 
-def play_double_beep() -> None:
-    """Play a double beep sound to indicate completion."""
-    play_system_beep()
-    time.sleep(0.2)  # Short pause between beeps
-    play_system_beep()
-    logging.debug("Double beep played")
+def play_start_beep() -> None:
+    """Play a start beep sound to indicate recording is starting."""
+    _play_beep_file(BEEP_START_FILENAME, "start")
+
+
+def play_completion_beep() -> None:
+    """Play a completion beep sound to indicate transcription is ready."""
+    _play_beep_file(BEEP_COMPLETE_FILENAME, "completion")
 
 
 def copy_to_clipboard(text: str) -> bool:
@@ -422,7 +452,7 @@ class WhispypyDaemon:
     def _start_recording(self) -> None:
         """Start audio recording."""
         logging.info("Starting recording...")
-        play_system_beep()
+        play_start_beep()
         self.pw_record_proc = subprocess.Popen(
             [
                 "pw-record",
@@ -441,7 +471,6 @@ class WhispypyDaemon:
     def _stop_recording_and_transcribe(self) -> None:
         """Stop recording and perform transcription."""
         logging.info("Stopping recording...")
-        play_system_beep()
         if self.pw_record_proc:
             self.pw_record_proc.terminate()
             self.pw_record_proc.wait()
@@ -494,8 +523,8 @@ class WhispypyDaemon:
         # Copy text to clipboard
         copy_to_clipboard(text)
 
-        # Play double beep to indicate transcription is ready in clipboard
-        play_double_beep()
+        # Play completion beep to indicate transcription is ready in clipboard
+        play_completion_beep()
 
     def run(self) -> None:
         """Run the daemon main loop."""

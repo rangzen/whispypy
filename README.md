@@ -8,6 +8,8 @@ A signal-controlled audio transcription daemon in Python powered by locally-runn
 
 This project is a Python rewrite of the original [whispy](https://github.com/daaku/whispy) by [@daaku](https://github.com/daaku). The name "whispypy" comes from the original "whispy" + "py" for Python. Special thanks to daaku for the original implementation and inspiration.
 
+Beeps are from [LaSonotheque of Joseph Sardin](https://lasonotheque.org).
+
 ![whispypy logo](whispypy-logo.png)
 
 > Whispypy sounds like "ouistiti" (French for marmoset)
