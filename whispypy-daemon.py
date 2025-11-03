@@ -2,17 +2,17 @@
 
 import argparse
 import configparser
-from contextlib import contextmanager
 import importlib.util
 import logging
 import os
-from pathlib import Path
 import signal
 import struct
 import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Generator, Optional, Union
 
 import numpy as np
@@ -194,49 +194,87 @@ def _play_beep_file(filename: str, beep_type: str) -> None:
 
     Args:
         filename: The beep sound filename (from the assets directory)
-        beep_type: Description of the beep type for logging (e.g., "system", "completion")
+        beep_type: Description of the beep type for logging (e.g., "start", "completion")
     """
     # Construct path to beep sound file
     beep_file = Path(__file__).parent / "assets" / filename
 
+    if not beep_file.exists():
+        logging.debug(f"Beep file not found: {beep_file}")
+        _try_terminal_beep_fallback(beep_type)
+        return
+
+    # Audio players to try, in order of preference
+    audio_players = [
+        "aplay",  # ALSA player
+        "paplay",  # PulseAudio player
+        "pw-play",  # PipeWire player
+    ]
+
+    for player in audio_players:
+        if _try_audio_player(player, str(beep_file), beep_type):
+            return
+
+    # All audio players failed, try terminal beep
+    _try_terminal_beep_fallback(beep_type)
+
+
+def _try_audio_player(player: str, audio_file: str, beep_type: str) -> bool:
+    """Try to play audio with a specific player.
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
     try:
-        # Play the beep sound file
-        subprocess.run(
-            ["aplay", str(beep_file)],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+        result = subprocess.run(
+            [player, audio_file],
+            capture_output=True,
+            text=True,
+            timeout=10,  # 10 second timeout
+            check=False,  # Don't raise exception on non-zero exit
         )
-        logging.debug(f"{beep_type.capitalize()} beep played via aplay")
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        try:
-            # Fallback to paplay (PulseAudio)
-            subprocess.run(
-                ["paplay", str(beep_file)],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            logging.debug(f"{beep_type.capitalize()} beep played via paplay")
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            try:
-                # Fallback to pw-play (PipeWire)
-                subprocess.run(
-                    ["pw-play", str(beep_file)],
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                logging.debug(f"{beep_type.capitalize()} beep played via pw-play")
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                # Final fallback to terminal beep
-                try:
-                    subprocess.run(["printf", "\\a"], check=True)
-                    logging.debug(
-                        f"{beep_type.capitalize()} beep played via printf (fallback)"
-                    )
-                except (subprocess.CalledProcessError, FileNotFoundError):
-                    logging.debug(f"Could not play {beep_type} beep")
+
+        if result.returncode == 0:
+            logging.debug(f"{beep_type.capitalize()} beep played via {player}")
+            return True
+        else:
+            # Log the actual error for debugging
+            error_parts = [f"exit code {result.returncode}"]
+            if result.stderr.strip():
+                error_parts.append(f"stderr: {result.stderr.strip()}")
+            logging.debug(f"{player} failed: {', '.join(error_parts)}")
+            return False
+
+    except subprocess.TimeoutExpired:
+        logging.debug(f"{player} timed out after 10 seconds")
+        return False
+    except FileNotFoundError:
+        logging.debug(f"{player} command not found")
+        return False
+    except PermissionError:
+        logging.debug(f"{player} permission denied")
+        return False
+    except Exception as e:
+        logging.debug(f"{player} failed with exception: {e}")
+        return False
+
+
+def _try_terminal_beep_fallback(beep_type: str) -> None:
+    """Try to play terminal beep as fallback."""
+    try:
+        result = subprocess.run(
+            ["printf", "\\a"], capture_output=True, text=True, timeout=5, check=False
+        )
+
+        if result.returncode == 0:
+            logging.debug(f"{beep_type.capitalize()} beep played via printf (fallback)")
+        else:
+            logging.debug(f"Terminal beep failed with exit code {result.returncode}")
+            logging.debug(f"Could not play {beep_type} beep")
+
+    except Exception as e:
+        logging.debug(f"Terminal beep failed with exception: {e}")
+        logging.debug(f"Could not play {beep_type} beep")
 
 
 def play_start_beep() -> None:
