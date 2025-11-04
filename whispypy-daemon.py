@@ -445,6 +445,9 @@ class WhispypyDaemon:
         else:
             raise ValueError(f"Unsupported engine: {self.engine}")
 
+        # Play beep to indicate model loading is complete
+        play_completion_beep()
+
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._handle_sigint)
         signal.signal(signal.SIGUSR2, self._handle_sigusr2)
