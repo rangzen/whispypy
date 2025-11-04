@@ -181,7 +181,7 @@ uv run python whispypy-daemon.py --keep-audio
 uv run python whispypy-daemon.py --device "new_device_name_here"
 ```
 
-> **Note:** When you specify a device with `--device`, it's automatically saved to `~/.whispypy.conf`. Future runs without `--device` will use the saved device configuration.
+> **Note:** When you specify a device with `--device`, it's automatically saved to `~/.config/whispypy/config.conf`. Future runs without `--device` will use the saved device configuration.
 
 #### Step 3: Control Recording
 
@@ -329,7 +329,7 @@ The `--autopaste` flag enables automatic pasting of transcribed text directly in
 
 ### Configuration File
 
-The daemon automatically saves your audio device configuration to `~/.whispypy.conf` when you specify `--device`. This allows you to run the daemon without specifying the device every time.
+The daemon automatically saves your audio device configuration to `~/.config/whispypy/config.conf` when you specify `--device`. This allows you to run the daemon without specifying the device every time.
 
 **Configuration behavior:**
 
@@ -348,10 +348,10 @@ device = your_device_name_here
 
 ```bash
 # View current config
-cat ~/.whispypy.conf
+cat ~/.config/whispypy/config.conf
 
 # Remove config (forces device specification on next run)
-rm ~/.whispypy.conf
+rm ~/.config/whispypy/config.conf
 ```
 
 ## Troubleshooting
