@@ -463,7 +463,7 @@ class WhispypyDaemon:
     def _load_parakeet_model(self) -> None:
         """Load Parakeet model."""
         try:
-            import nemo.collections.asr as nemo_asr
+            import nemo.collections.asr as nemo_asr  # type: ignore[import-untyped]
         except ImportError:
             raise ImportError(
                 "Parakeet (NeMo) is not available. Please see README for installation instructions."
