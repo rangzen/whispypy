@@ -437,6 +437,9 @@ class WhispypyDaemon:
         self.running = True
         self.pw_record_proc: Optional[subprocess.Popen[bytes]] = None
 
+        # Model attribute - will be assigned in load methods
+        self.model: Any = None
+
         # Load the appropriate model
         if self.engine == "whisper":
             self._load_whisper_model()
@@ -582,17 +585,16 @@ class WhispypyDaemon:
             logging.warning("Audio file is empty!")
             return
 
-        # Load audio samples for Whisper or keep file path for Parakeet
-        if self.engine == "whisper":
-            logging.info("Loading audio samples...")
-            samples = load_audio_f32(self.temp_audio_file)
-            logging.info(f"Loaded {len(samples)} audio samples")
-
         # Transcribe with appropriate engine
         logging.info(f"Transcribing with {self.engine.capitalize()}...")
         transcription_start = time.time()
 
         if self.engine == "whisper":
+            # Load audio samples for Whisper
+            logging.info("Loading audio samples...")
+            samples = load_audio_f32(self.temp_audio_file)
+            logging.info(f"Loaded {len(samples)} audio samples")
+
             result = self.model.transcribe(
                 samples, fp16=False, language=None, task="transcribe"
             )
