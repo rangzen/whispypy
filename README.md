@@ -67,7 +67,7 @@ uv pip install onnx==1.18.0
 ```
 
 > **Note:** NeMo installation is large (~2GB) and may take some time. Whisper works out of the box without additional dependencies.
-> See https://github.com/onnx/onnx/issues/7249 for ONNX installation issues.
+> See <https://github.com/onnx/onnx/issues/7249> for ONNX installation issues.
 
 ## Usage
 
@@ -112,6 +112,7 @@ uv pip install onnx==1.18.0
 On Ubuntu, you can create a custom shortcut in Settings > Keyboard > Keyboard Shortcuts > View and Customize Shortcuts > Custom Shortcuts. Click the "+" button, name it "Whispypy Toggle Recording", and set the command to the full path of `send_signal.sh` or the pkill command.
 E.g. for me, `sh -c -- "~/sources/whispypy/send_signal.sh"`.
 Then assign your desired key combination, e.g., Ctrl+Shift+t (t like talk).
+
 ### Step-by-Step Guide
 
 #### Step 1: Find Your Audio Device
@@ -318,21 +319,26 @@ If the daemon fails to record:
 ### Engine-Specific Issues
 
 #### Whisper Engine
+
 - **Model download fails**: Check internet connection; models are downloaded on first use
 - **Slow transcription**: Try smaller models (`tiny`, `base`) for faster processing
 - **Memory issues**: Use smaller models or check available RAM
 
 #### Parakeet Engine
+
 - **Model download timeout**: Parakeet models are large (~600MB); ensure stable internet connection
 - **CUDA warnings**: Parakeet will use CPU if CUDA isn't available (slower but functional)
 - **Import warnings**: NeMo may show warnings about missing optional dependencies; these are usually harmless
 
 ### Audio Format Issues
+
 The daemon automatically handles different audio formats:
+
 - **Whisper**: Uses raw f32 audio data (`.au` files)
 - **Parakeet**: Uses standard audio files (`.wav` files)
 
 ### Performance Comparison
+
 - **Whisper**: Better for general use, multiple languages, smaller models available
 - **Parakeet**: Optimized for English, potentially faster with GPU acceleration
 
