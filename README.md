@@ -22,7 +22,8 @@ Beeps are from [LaSonotheque of Joseph Sardin](https://lasonotheque.org).
   - **OpenAI Whisper** (default): Multiple model sizes (tiny to large-v3)
   - **NVIDIA Parakeet**: High-performance ASR model (nvidia/parakeet-tdt-0.6b-v3)
 - 📋 Automatic clipboard integration (Wayland/X11)
-- 🔧 Configurable audio input devices with persistent configuration
+- � Auto-paste functionality (automatically paste transcribed text)
+- �🔧 Configurable audio input devices with persistent configuration
 - 📝 Optional audio file retention
 
 ## Requirements
@@ -37,6 +38,9 @@ Beeps are from [LaSonotheque of Joseph Sardin](https://lasonotheque.org).
 - **Clipboard tools:**
   - Wayland: `wl-copy`
   - X11: `xclip` or `xsel`
+- **Auto-paste tools (optional, for `--autopaste` feature):**
+  - Wayland: `wtype` or `ydotool`
+  - X11: `xdotool`
 
 ## Installation
 
@@ -218,7 +222,7 @@ kill -SIGINT 12345
 #### whispypy-daemon.py
 
 ```text
-usage: whispypy-daemon.py [-h] [--engine {whisper,parakeet}] [--device DEVICE] [--keep-audio] [--verbose] [model_path]
+usage: whispypy-daemon.py [-h] [--engine {whisper,parakeet}] [--device DEVICE] [--keep-audio] [--autopaste] [--verbose] [model_path]
 
 Arguments:
   model_path           Model path or name. For Whisper: tiny, base, small, medium, large, large-v2, large-v3. For Parakeet: nvidia/parakeet-tdt-0.6b-v3 (default: base)
@@ -227,6 +231,7 @@ Options:
   --engine, -e {whisper,parakeet}  Transcription engine to use (default: whisper)
   --device, -d DEVICE              Audio input device name. If not provided, loads from ~/.config/whispypy/config.conf
   --keep-audio                     Keep temporary audio files
+  --autopaste                      Automatically paste transcribed text after copying to clipboard
   --verbose, -v                    Enable verbose logging
 ```
 
@@ -273,9 +278,54 @@ uv run python whispypy-daemon.py large-v3 --verbose
 # Keep audio files for debugging (uses saved device)
 uv run python whispypy-daemon.py --keep-audio
 
+# Auto-paste transcribed text directly (copies to clipboard AND pastes automatically)
+uv run python whispypy-daemon.py --autopaste
+
+# Combine autopaste with other options
+uv run python whispypy-daemon.py large-v3 --autopaste --verbose
+
 # Parakeet with verbose logging
 uv run python whispypy-daemon.py -e parakeet nvidia/parakeet-tdt-0.6b-v3 --verbose
 ```
+
+#### Auto-Paste Feature
+
+The `--autopaste` flag enables automatic pasting of transcribed text directly into the currently focused application:
+
+- **Normal mode**: Text is copied to clipboard only
+- **Auto-paste mode**: Text is copied to clipboard AND automatically pasted
+
+**Requirements for auto-paste:**
+
+- **Wayland**: Install `wtype` or `ydotool`
+
+  ```bash
+  # Debian/Ubuntu
+  sudo apt install wtype ydotool
+  
+  # Arch Linux
+  sudo pacman -S wtype ydotool
+  ```
+
+- **X11**: Install `xdotool`
+
+  ```bash
+  # Debian/Ubuntu
+  sudo apt install xdotool
+  
+  # Arch Linux
+  sudo pacman -S xdotool
+  ```
+
+**Usage example:**
+
+1. Focus the application where you want the text (text editor, terminal, browser, etc.)
+2. Start recording with `./send_signal.sh` through your shortcut to not lose focus
+3. Speak your text
+4. Stop recording with `./send_signal.sh` through your shortcut again...
+5. Text is automatically pasted in the focused application
+
+> **Note:** Auto-paste simulates `Ctrl+V` keypress. If auto-paste fails, the text is still available in the clipboard for manual pasting.
 
 ### Configuration File
 

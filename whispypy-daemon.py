@@ -345,6 +345,55 @@ def copy_to_clipboard(text: str) -> bool:
     return False
 
 
+def paste_from_clipboard() -> bool:
+    """Paste text from clipboard using the appropriate tool for the current display server."""
+    # Check if we're on Wayland
+    if os.getenv("WAYLAND_DISPLAY"):
+        # Use wtype for Wayland (simulates typing)
+        try:
+            subprocess.run(["wtype", "-M", "ctrl", "v"], check=True)
+            logging.info("Pasted from clipboard (wtype)")
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # Fallback to ydotool
+            try:
+                subprocess.run(["ydotool", "key", "ctrl+v"], check=True)
+                logging.info("Pasted from clipboard (ydotool)")
+                return True
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                logging.warning(f"Wayland paste tools failed: {e}")
+
+    # Check if we're on X11
+    if os.getenv("DISPLAY"):
+        # Try xdotool for X11
+        try:
+            subprocess.run(["xdotool", "key", "ctrl+v"], check=True)
+            logging.info("Pasted from clipboard (xdotool)")
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            logging.warning(f"xdotool failed: {e}")
+
+    # Fallback: try all available paste tools
+    paste_tools = [
+        ["xdotool", "key", "ctrl+v"],  # X11
+        ["wtype", "-M", "ctrl", "v"],  # Wayland
+        ["ydotool", "key", "ctrl+v"],  # Wayland alternative
+    ]
+
+    for cmd in paste_tools:
+        try:
+            subprocess.run(cmd, check=True)
+            tool_name = cmd[0]
+            logging.info(f"Pasted from clipboard ({tool_name})")
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            continue
+
+    logging.error("Failed to paste from clipboard: no suitable paste tool found")
+    logging.error("Available tools: xdotool (X11), wtype/ydotool (Wayland)")
+    return False
+
+
 @contextmanager
 def managed_subprocess(
     args: list[str],
@@ -369,11 +418,13 @@ class WhispypyDaemon:
         device_name: str,
         engine: str = "whisper",
         keep_audio: bool = False,
+        autopaste: bool = False,
     ):
         self.model_path = model_path
         self.device_name = device_name
         self.engine = engine
         self.keep_audio = keep_audio
+        self.autopaste = autopaste
 
         # Create temporary file for audio recording with appropriate extension
         audio_extension = ".wav" if engine == "parakeet" else ".au"
@@ -561,6 +612,15 @@ class WhispypyDaemon:
         # Copy text to clipboard
         copy_to_clipboard(text)
 
+        # Auto-paste if enabled
+        if self.autopaste:
+            logging.info("Auto-pasting transcribed text...")
+            # Small delay to ensure clipboard is ready
+            time.sleep(0.1)
+            paste_success = paste_from_clipboard()
+            if not paste_success:
+                logging.warning("Auto-paste failed, but text is still in clipboard")
+
         # Play completion beep to indicate transcription is ready in clipboard
         play_completion_beep()
 
@@ -575,6 +635,14 @@ class WhispypyDaemon:
         logging.info(f"To send signal exit from another terminal: kill -SIGINT {pid}")
         logging.info(f"Using audio device: {self.device_name}")
         logging.info(f"Using transcription engine: {self.engine}")
+        if self.autopaste:
+            logging.info(
+                "Auto-paste is enabled - transcribed text will be pasted automatically"
+            )
+        else:
+            logging.info(
+                "Auto-paste is disabled - transcribed text will only be copied to clipboard"
+            )
 
         # Validate device before starting
         if not self.validate_device():
@@ -628,6 +696,11 @@ def main() -> None:
         help="Keep the temporary audio file after transcription",
     )
     parser.add_argument(
+        "--autopaste",
+        action="store_true",
+        help="Automatically paste transcribed text after copying to clipboard",
+    )
+    parser.add_argument(
         "--verbose", "-v", action="store_true", help="Enable verbose logging"
     )
 
@@ -675,6 +748,7 @@ def main() -> None:
         device_name=device_name,
         engine=args.engine,
         keep_audio=args.keep_audio,
+        autopaste=args.autopaste,
     )
 
     daemon.run()
