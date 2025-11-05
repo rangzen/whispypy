@@ -625,9 +625,11 @@ class WhispypyDaemon:
             paste_success = paste_from_clipboard()
             if not paste_success:
                 logging.warning("Auto-paste failed, but text is still in clipboard")
-
-        # Play completion beep to indicate transcription is ready in clipboard
-        play_completion_beep()
+        else:
+            # Play completion beep only when autopaste is disabled
+            # When autopaste is enabled, the text is automatically pasted so no beep needed
+            # to know when it's ready
+            play_completion_beep()
 
     def run(self) -> None:
         """Run the daemon main loop."""
