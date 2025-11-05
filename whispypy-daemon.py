@@ -448,9 +448,6 @@ class WhispypyDaemon:
         else:
             raise ValueError(f"Unsupported engine: {self.engine}")
 
-        # Play beep to indicate model loading is complete
-        play_completion_beep()
-
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._handle_sigint)
         signal.signal(signal.SIGUSR2, self._handle_sigusr2)
@@ -662,6 +659,9 @@ class WhispypyDaemon:
         logging.info("Device validation successful")
         logging.info("Ready. Send SIGUSR2 to start/stop recording.")
         logging.info("Press Ctrl+C to exit.")
+
+        # Initial beep to indicate readiness
+        play_completion_beep()
 
         # Wait for signals
         try:
