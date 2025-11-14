@@ -11,8 +11,9 @@ This project is a Python rewrite of the original [whispy](https://github.com/daa
 Beeps are from [LaSonotheque of Joseph Sardin](https://lasonotheque.org).
 
 ![whispypy logo](whispypy-logo.png)
-
 > Whispypy sounds like "ouistiti" (French for marmoset)
+
+<img src="./assets/qr-code.svg" alt="whispypy qrcode" width="200">
 
 ## Features
 
