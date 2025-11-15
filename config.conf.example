@@ -1,0 +1,25 @@
+# whispypy configuration file example
+# This file is automatically created at ~/.config/whispypy/config.conf
+# when you run the daemon with the --device option
+
+[DEFAULT]
+# Audio input device name (required)
+# Use test_audio_devices.py to find the correct device name
+device = alsa_input.usb-Blue_Microphones_Yeti_Stereo_Microphone_0000000123456789-00.analog-stereo
+
+# Optional: XKB keyboard layout for dotool (Wayland autopaste fallback)
+# Only used when primary paste tools (wtype, ydotool) are not available
+# Common layouts: us, fr, de, es, etc.
+# Default: none (not set)
+dotool_xkb_layout = fr
+
+# Optional: XKB keyboard variant for dotool (Wayland autopaste fallback)
+# Only used when primary paste tools (wtype, ydotool) are not available
+# Common variants: dvorak, colemak, bepo, etc.
+# Default: none (not set)
+dotool_xkb_variant = bepo
+
+# Note: The dotool settings are only used as a fallback mechanism on Wayland
+# systems when the preferred paste tools (wtype, ydotool) are not available.
+# Most users won't need to set these unless they're using a non-standard
+# keyboard layout and experiencing paste issues.

@@ -298,14 +298,17 @@ The `--autopaste` flag enables automatic pasting of transcribed text directly in
 
 **Requirements for auto-paste:**
 
-- **Wayland**: Install `wtype` or `ydotool`
+- **Wayland**: Install `wtype`, `ydotool`, or `dotool`
 
   ```bash
   # Debian/Ubuntu
   sudo apt install wtype ydotool
-  
+
   # Arch Linux
   sudo pacman -S wtype ydotool
+
+  # dotool (from source)
+  # See: https://git.sr.ht/~geb/dotool
   ```
 
 - **X11**: Install `xdotool`
@@ -313,7 +316,7 @@ The `--autopaste` flag enables automatic pasting of transcribed text directly in
   ```bash
   # Debian/Ubuntu
   sudo apt install xdotool
-  
+
   # Arch Linux
   sudo pacman -S xdotool
   ```
@@ -340,10 +343,23 @@ The daemon automatically saves your audio device configuration to `~/.config/whi
 
 **Config file format:**
 
+You can check an example configuration file with `config.conf.example`.
+
 ```ini
 [DEFAULT]
 device = your_device_name_here
+# Optional: Configure dotool keyboard layout for autopaste (Wayland only)
+dotool_xkb_layout = fr
+dotool_xkb_variant = bepo
 ```
+
+**Supported configuration options:**
+
+- `device`: Audio input device name
+- `dotool_xkb_layout`: XKB keyboard layout for dotool (used in Wayland autopaste fallback)
+- `dotool_xkb_variant`: XKB keyboard variant for dotool (used in Wayland autopaste fallback)
+
+> **Note:** The dotool settings are only used as a fallback when primary paste tools (wtype, ydotool) are not available on Wayland systems.
 
 **Manual config management:**
 

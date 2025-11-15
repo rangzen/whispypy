@@ -2,17 +2,17 @@
 
 import argparse
 import configparser
+from contextlib import contextmanager
 import importlib.util
 import logging
 import os
+from pathlib import Path
 import signal
 import struct
 import subprocess
 import sys
 import tempfile
 import time
-from contextlib import contextmanager
-from pathlib import Path
 from typing import Any, Generator, Optional, Union
 
 import numpy as np
@@ -94,6 +94,42 @@ class ConfigManager:
             logging.error(f"Error reading config file {self.config_file}: {e}")
             return None
 
+    def load_dotool_layout(self) -> Optional[str]:
+        """Load DOTOOL_XKB_LAYOUT configuration from config file."""
+        if not self.config_file.exists():
+            return None
+
+        config = configparser.ConfigParser()
+        try:
+            config.read(self.config_file)
+            layout = config.get("DEFAULT", "dotool_xkb_layout", fallback=None)
+            if layout:
+                logging.debug(f"Using dotool XKB layout from config: {layout}")
+            return layout
+        except Exception as e:
+            logging.debug(
+                f"Error reading dotool layout from config file {self.config_file}: {e}"
+            )
+            return None
+
+    def load_dotool_variant(self) -> Optional[str]:
+        """Load DOTOOL_XKB_VARIANT configuration from config file."""
+        if not self.config_file.exists():
+            return None
+
+        config = configparser.ConfigParser()
+        try:
+            config.read(self.config_file)
+            variant = config.get("DEFAULT", "dotool_xkb_variant", fallback=None)
+            if variant:
+                logging.debug(f"Using dotool XKB variant from config: {variant}")
+            return variant
+        except Exception as e:
+            logging.debug(
+                f"Error reading dotool variant from config file {self.config_file}: {e}"
+            )
+            return None
+
     def validate_config(self) -> bool:
         """Validate configuration file format and values."""
         if not self.config_file.exists():
@@ -168,6 +204,26 @@ class ConfigManager:
                         f"Invalid audio_format value '{audio_format}'. "
                         f"Valid values: {valid_formats}"
                     )
+                    return False
+
+            # Validate dotool_xkb_layout if present
+            dotool_layout_value = config.get(
+                "DEFAULT", "dotool_xkb_layout", fallback=None
+            )
+            if dotool_layout_value is not None:
+                dotool_layout = dotool_layout_value.strip()
+                if not dotool_layout:
+                    logging.warning("dotool_xkb_layout value is empty")
+                    return False
+
+            # Validate dotool_xkb_variant if present
+            dotool_variant_value = config.get(
+                "DEFAULT", "dotool_xkb_variant", fallback=None
+            )
+            if dotool_variant_value is not None:
+                dotool_variant = dotool_variant_value.strip()
+                if not dotool_variant:
+                    logging.warning("dotool_xkb_variant value is empty")
                     return False
 
             logging.debug("Configuration validation successful")
@@ -349,19 +405,53 @@ def paste_from_clipboard() -> bool:
     """Paste text from clipboard using the appropriate tool for the current display server."""
     # Check if we're on Wayland
     if os.getenv("WAYLAND_DISPLAY"):
+        logging.debug("Detected Wayland display server for pasting")
         # Use wtype for Wayland (simulates typing)
         try:
+            logging.debug("Attempting to paste using wtype")
             subprocess.run(["wtype", "-M", "ctrl", "v"], check=True)
             logging.info("Pasted from clipboard (wtype)")
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             # Fallback to ydotool
             try:
+                logging.debug("Attempting to paste using ydotool")
                 subprocess.run(["ydotool", "key", "ctrl+v"], check=True)
                 logging.info("Pasted from clipboard (ydotool)")
                 return True
-            except (subprocess.CalledProcessError, FileNotFoundError) as e:
-                logging.warning(f"Wayland paste tools failed: {e}")
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # Final fallback: try wl-paste + dotool with layout settings
+                try:
+                    logging.debug(
+                        "Attempting to paste using dotool with layout settings"
+                    )
+                    # Load dotool configuration
+                    config_manager = ConfigManager()
+                    dotool_layout = config_manager.load_dotool_layout()
+                    dotool_variant = config_manager.load_dotool_variant()
+
+                    # Build command with optional environment variables
+                    env_vars = []
+                    if dotool_layout:
+                        env_vars.append(f"DOTOOL_XKB_LAYOUT={dotool_layout}")
+                    if dotool_variant:
+                        env_vars.append(f"DOTOOL_XKB_VARIANT={dotool_variant}")
+
+                    env_prefix = " ".join(env_vars)
+                    if env_prefix:
+                        command = f"wl-paste | sed 's/^/type /' | {env_prefix} dotool"
+                    else:
+                        command = "wl-paste | sed 's/^/type /' | dotool"
+
+                    subprocess.run(
+                        command,
+                        shell=True,
+                        check=True,
+                    )
+                    logging.info("Pasted from clipboard (dotool)")
+                    return True
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    pass
 
     # Check if we're on X11
     if os.getenv("DISPLAY"):
