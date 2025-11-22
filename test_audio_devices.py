@@ -8,6 +8,19 @@ import time
 from typing import Dict, List, Tuple, TypedDict, Union
 
 
+def load_audio_s16_as_f32(filepath: Union[str, Path]) -> List[float]:
+    """Load 16-bit PCM audio and convert to float32 samples in [-1, 1]."""
+    with open(filepath, "rb") as f:
+        data = f.read()
+
+    num_samples = len(data) // 2
+    if num_samples == 0:
+        return []
+
+    ints = struct.unpack(f"<{num_samples}h", data)
+    return [x / 32768.0 for x in ints]
+
+
 class WorkingDevice(TypedDict):
     device_name: str
     display_name: str
@@ -191,15 +204,29 @@ def test_audio_device(
             f"🎙️  Recording for {duration} seconds... Please speak into the microphone!"
         )
 
-        cmd = [
-            "pw-record",
-            "--target",
-            device_name,
-            "--format=f32",
-            "--rate=16000",
-            "--channels=1",
-            test_file,
-        ]
+        if device_name.startswith("hw:"):
+            # ALSA device from arecord -l fallback: record 16-bit PCM
+            cmd = [
+                "arecord",
+                "-D", device_name.replace("hw:", "plughw:", 1), # convert hw: to plughw: - this is needed for mono channels
+                "-f", "S16_LE",
+                "-r", "16000",
+                "-c", "1",       # mono
+                "-d", str(duration),
+                "-t", "raw",
+                test_file,
+            ]
+        else:
+            # PipeWire node from pw-cli: record float32
+            cmd = [
+                "pw-record",
+                "--target",
+                device_name,
+                "--format=f32",
+                "--rate=16000",
+                "--channels=1",
+                test_file,
+            ]
 
         proc = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
 
@@ -216,7 +243,11 @@ def test_audio_device(
             print(f"✅ Audio file created: {file_size} bytes")
 
             if file_size > 0:
-                samples = load_audio_f32(test_file)
+                if device_name.startswith("hw:"):
+                    samples = load_audio_s16_as_f32(test_file)
+                else:
+                    samples = load_audio_f32(test_file)
+
                 analysis = analyze_audio_samples(samples)
                 print(f"   Audio analysis: {analysis}")
 

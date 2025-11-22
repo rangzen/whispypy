@@ -245,6 +245,20 @@ def load_audio_f32(filepath: Union[str, Path]) -> np.ndarray:
     return np.array(floats, dtype=np.float32)
 
 
+def load_audio_s16_as_f32(filepath: Union[str, Path]) -> np.ndarray:
+    """Load 16-bit PCM audio and convert to float32 samples in [-1, 1]."""
+    with open(filepath, "rb") as f:
+        data = f.read()
+
+    num_samples = len(data) // 2
+    if num_samples == 0:
+        return np.array([], dtype=np.float32)
+
+    ints = struct.unpack(f"<{num_samples}h", data)
+    floats = np.asarray(ints, dtype=np.float32) / 32768.0
+    return floats
+
+
 def _play_beep_file(filename: str, beep_type: str) -> None:
     """Play a beep sound file with fallback options.
 
@@ -567,6 +581,10 @@ class WhispypyDaemon:
         model_load_time = time.time() - model_load_start
         logging.info(f"Parakeet model loaded in {model_load_time:.2f} seconds")
 
+    def _is_alsa_device(self) -> bool:
+        """Return True if device_name looks like a raw ALSA device."""
+        return self.device_name.startswith(("hw:", "plughw:"))
+
     def validate_device(self) -> bool:
         """Validate that the audio device exists and is accessible."""
         try:
@@ -577,22 +595,47 @@ class WhispypyDaemon:
             ) as test_file:
                 test_file_path = test_file.name
 
-            # Use managed_subprocess for proper cleanup
-            with managed_subprocess(
-                [
-                    "pw-record",
-                    f"--target={self.device_name}",
-                    f"--format={AUDIO_FORMAT}",
-                    f"--rate={SAMPLE_RATE}",
-                    f"--channels={CHANNELS}",
-                    test_file_path,
-                ]
-            ) as _:
-                # Let it record for the test duration then it will be terminated
-                time.sleep(DEVICE_TEST_DURATION)
+            if self._is_alsa_device():
+                # ALSA: use arecord with the same device transformation as recording
+                alsa_device = (
+                    self.device_name.replace("hw:", "plughw:", 1)
+                    if self.device_name.startswith("hw:")
+                    else self.device_name
+                )
+                with managed_subprocess(
+                    [
+                        "arecord",
+                        "-D", alsa_device,
+                        "-f", "S16_LE",
+                        "-r", str(SAMPLE_RATE),
+                        "-c", str(CHANNELS),
+                        "-t", "raw",
+                        test_file_path,
+                    ]
+                ) as _:
+                    time.sleep(DEVICE_TEST_DURATION)
+            else:
+                # PipeWire: use pw-record
+                with managed_subprocess(
+                    [
+                        "pw-record",
+                        f"--target={self.device_name}",
+                        f"--format={AUDIO_FORMAT}",
+                        f"--rate={SAMPLE_RATE}",
+                        f"--channels={CHANNELS}",
+                        test_file_path,
+                    ]
+                ) as _:
+                    # Let it record for the test duration then it will be terminated
+                    time.sleep(DEVICE_TEST_DURATION)
 
+            size = Path(test_file_path).stat().st_size
             # Clean up test file
             Path(test_file_path).unlink(missing_ok=True)
+
+            if size == 0:
+                logging.debug("Device validation produced empty audio file")
+                return False
 
             # If we got here without exception, the device is accessible
             return True
@@ -635,15 +678,37 @@ class WhispypyDaemon:
         """Start audio recording."""
         logging.info("Starting recording...")
         play_start_beep()
-        self.pw_record_proc = subprocess.Popen(
-            [
+
+        if self._is_alsa_device():
+            # ALSA: arecord - use raw 16-bit PCM for Whisper, WAV container for Parakeet
+            alsa_device = (
+                self.device_name.replace("hw:", "plughw:", 1)
+                if self.device_name.startswith("hw:")
+                else self.device_name
+            )
+            alsa_container = "wav" if self.engine == "parakeet" else "raw"
+            cmd = [
+                "arecord",
+                "-D", alsa_device,
+                "-f", "S16_LE",
+                "-r", str(SAMPLE_RATE),
+                "-c", str(CHANNELS),
+                "-t", alsa_container,
+                str(self.temp_audio_file),
+            ]
+        else:
+            # PipeWire: pw-record
+            cmd = [
                 "pw-record",
                 f"--target={self.device_name}",
                 f"--format={AUDIO_FORMAT}",
                 f"--rate={SAMPLE_RATE}",
                 f"--channels={CHANNELS}",
                 str(self.temp_audio_file),
-            ],
+            ]
+
+        self.pw_record_proc = subprocess.Popen(
+            cmd,
             stderr=subprocess.PIPE,
             stdout=subprocess.PIPE,
         )
@@ -679,7 +744,10 @@ class WhispypyDaemon:
         if self.engine == "whisper":
             # Load audio samples for Whisper
             logging.info("Loading audio samples...")
-            samples = load_audio_f32(self.temp_audio_file)
+            if self._is_alsa_device():
+                samples = load_audio_s16_as_f32(self.temp_audio_file)
+            else:
+                samples = load_audio_f32(self.temp_audio_file)
             logging.info(f"Loaded {len(samples)} audio samples")
 
             result = self.model.transcribe(
