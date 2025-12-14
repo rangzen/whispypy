@@ -39,6 +39,24 @@ PROCESS_TERMINATION_TIMEOUT = 2.0  # seconds - Timeout for process cleanup
 # File paths (will be replaced with proper temp files)
 TEMP_AUDIO_FILENAME = "whispy_recording"  # Base filename for temporary audio (extension will be added based on engine)
 
+# Terminal detection constants
+TERMINAL_KEYWORDS = [
+    "term",
+    "konsole",
+    "kitty",
+    "alacritty",
+    "ghostty",
+    "wezterm",
+    "foot",
+    "gnome-terminal",
+    "xterm",
+    "urxvt",
+    "st",
+]  # Common terminal identifiers for window class/title matching
+
+# State file for external indicators (e.g., Waybar)
+RECORDING_STATE_FILE = Path("/tmp/whispypy_recording")
+
 
 def get_config_file() -> Path:
     """Get the configuration file path following XDG Base Directory specification."""
@@ -423,9 +441,11 @@ def paste_from_clipboard() -> bool:
         logging.debug("Detected Wayland display server for pasting")
 
         # Detect if focused window is a terminal
+        # Note: Uses hyprctl which is Hyprland-specific. Falls back gracefully to GUI paste
+        # if detection fails (e.g., on other Wayland compositors like Sway, River, etc.)
         is_terminal = False
         try:
-            # Get active window class using hyprctl
+            # Get active window class using hyprctl (Hyprland compositor)
             result = subprocess.run(
                 ["hyprctl", "activewindow", "-j"],
                 capture_output=True,
@@ -436,9 +456,8 @@ def paste_from_clipboard() -> bool:
             window_class = window_info.get("class", "").lower()
             window_title = window_info.get("title", "").lower()
 
-            # Common terminal identifiers
-            terminal_keywords = ["term", "konsole", "kitty", "alacritty", "ghostty", "wezterm", "foot"]
-            is_terminal = any(keyword in window_class or keyword in window_title for keyword in terminal_keywords)
+            # Check against common terminal identifiers
+            is_terminal = any(keyword in window_class or keyword in window_title for keyword in TERMINAL_KEYWORDS)
             logging.debug(f"Window class: {window_class}, is_terminal: {is_terminal}")
         except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError):
             logging.debug("Could not detect window type, defaulting to GUI paste")
@@ -461,9 +480,9 @@ def paste_from_clipboard() -> bool:
         # If wtype failed, try ydotool
         try:
             # Add small delay before paste to let window manager settle
-            import time
             time.sleep(0.1)
             # Use key codes: 29 is left ctrl, 42 is left shift, 47 is v
+            # Format: "keycode:state" where :1 = key down, :0 = key up
             if is_terminal:
                 logging.debug("Attempting to paste using ydotool with Ctrl+Shift+V (terminal)")
                 subprocess.run(["ydotool", "key", "29:1", "42:1", "47:1", "47:0", "42:0", "29:0"], check=True)
@@ -533,9 +552,8 @@ def paste_from_clipboard() -> bool:
             except (subprocess.CalledProcessError, FileNotFoundError):
                 window_title = ""
 
-            # Common terminal identifiers
-            terminal_keywords = ["term", "konsole", "kitty", "alacritty", "ghostty", "wezterm", "foot", "gnome-terminal", "xterm", "urxvt", "st"]
-            is_terminal = any(keyword in window_class or keyword in window_title for keyword in terminal_keywords)
+            # Check against common terminal identifiers
+            is_terminal = any(keyword in window_class or keyword in window_title for keyword in TERMINAL_KEYWORDS)
             logging.debug(f"Window class: {window_class}, is_terminal: {is_terminal}")
         except (subprocess.CalledProcessError, FileNotFoundError):
             logging.debug("Could not detect window type, defaulting to GUI paste")
@@ -556,7 +574,6 @@ def paste_from_clipboard() -> bool:
             logging.warning(f"xdotool failed: {e}")
 
     # Fallback: try all available paste tools
-    import time
     time.sleep(0.1)
     paste_tools = [
         ["xdotool", "key", "ctrl+v"],  # X11
@@ -795,11 +812,11 @@ class WhispypyDaemon:
         self.recording = True
         # Create state file for external indicators (e.g., Waybar)
         try:
-            Path("/tmp/whispypy_recording").touch()
-        except Exception:
+            RECORDING_STATE_FILE.touch()
+        except Exception as e:
             # State file creation failed, but recording is already started
             # Log warning but don't abort - recording is more important
-            logging.warning("Failed to create recording state file, but recording continues")
+            logging.warning(f"Failed to create recording state file: {e}", exc_info=True)
         logging.info("Recording started successfully")
 
     def _stop_recording_and_transcribe(self) -> None:
@@ -812,7 +829,7 @@ class WhispypyDaemon:
         self.recording = False
         # Remove state file for external indicators (e.g., Waybar)
         try:
-            Path("/tmp/whispypy_recording").unlink(missing_ok=True)
+            RECORDING_STATE_FILE.unlink(missing_ok=True)
         except Exception:
             pass
         logging.info("Recording stopped")
