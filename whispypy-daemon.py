@@ -4,6 +4,7 @@ import argparse
 import configparser
 from contextlib import contextmanager
 import importlib.util
+import json
 import logging
 import os
 from pathlib import Path
@@ -420,68 +421,147 @@ def paste_from_clipboard() -> bool:
     # Check if we're on Wayland
     if os.getenv("WAYLAND_DISPLAY"):
         logging.debug("Detected Wayland display server for pasting")
-        # Use wtype for Wayland (simulates typing)
+
+        # Detect if focused window is a terminal
+        is_terminal = False
         try:
-            logging.debug("Attempting to paste using wtype")
-            subprocess.run(["wtype", "-M", "ctrl", "v"], check=True)
-            logging.info("Pasted from clipboard (wtype)")
+            # Get active window class using hyprctl
+            result = subprocess.run(
+                ["hyprctl", "activewindow", "-j"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            window_info = json.loads(result.stdout)
+            window_class = window_info.get("class", "").lower()
+            window_title = window_info.get("title", "").lower()
+
+            # Common terminal identifiers
+            terminal_keywords = ["term", "konsole", "kitty", "alacritty", "ghostty", "wezterm", "foot"]
+            is_terminal = any(keyword in window_class or keyword in window_title for keyword in terminal_keywords)
+            logging.debug(f"Window class: {window_class}, is_terminal: {is_terminal}")
+        except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError):
+            logging.debug("Could not detect window type, defaulting to GUI paste")
+
+        # Use wtype for Wayland (simulates typing)
+        # Use Ctrl+Shift+V for terminals, Ctrl+V for GUI apps
+        try:
+            if is_terminal:
+                logging.debug("Attempting to paste using wtype with Ctrl+Shift+V (terminal)")
+                subprocess.run(["wtype", "-M", "ctrl", "-M", "shift", "v"], check=True)
+                logging.info("Pasted from clipboard (wtype with Ctrl+Shift+V)")
+            else:
+                logging.debug("Attempting to paste using wtype with Ctrl+V (GUI)")
+                subprocess.run(["wtype", "-M", "ctrl", "v"], check=True)
+                logging.info("Pasted from clipboard (wtype with Ctrl+V)")
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
-            # Fallback to ydotool
+            pass
+
+        # If wtype failed, try ydotool
+        try:
+            # Add small delay before paste to let window manager settle
+            import time
+            time.sleep(0.1)
+            # Use key codes: 29 is left ctrl, 42 is left shift, 47 is v
+            if is_terminal:
+                logging.debug("Attempting to paste using ydotool with Ctrl+Shift+V (terminal)")
+                subprocess.run(["ydotool", "key", "29:1", "42:1", "47:1", "47:0", "42:0", "29:0"], check=True)
+                logging.info("Pasted from clipboard (ydotool with Ctrl+Shift+V)")
+            else:
+                logging.debug("Attempting to paste using ydotool with Ctrl+V (GUI)")
+                subprocess.run(["ydotool", "key", "29:1", "47:1", "47:0", "29:0"], check=True)
+                logging.info("Pasted from clipboard (ydotool with Ctrl+V)")
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # Final fallback: try wl-paste + dotool with layout settings
             try:
-                logging.debug("Attempting to paste using ydotool")
-                subprocess.run(["ydotool", "key", "ctrl+v"], check=True)
-                logging.info("Pasted from clipboard (ydotool)")
+                logging.debug(
+                    "Attempting to paste using dotool with layout settings"
+                )
+                # Load dotool configuration
+                config_manager = ConfigManager()
+                dotool_layout = config_manager.load_dotool_layout()
+                dotool_variant = config_manager.load_dotool_variant()
+
+                # Build command with optional environment variables
+                env_vars = []
+                if dotool_layout:
+                    env_vars.append(f"DOTOOL_XKB_LAYOUT={dotool_layout}")
+                if dotool_variant:
+                    env_vars.append(f"DOTOOL_XKB_VARIANT={dotool_variant}")
+
+                env_prefix = " ".join(env_vars)
+                if env_prefix:
+                    command = f"wl-paste | sed 's/^/type /' | {env_prefix} dotool"
+                else:
+                    command = "wl-paste | sed 's/^/type /' | dotool"
+
+                subprocess.run(
+                    command,
+                    shell=True,
+                    check=True,
+                )
+                logging.info("Pasted from clipboard (dotool)")
                 return True
             except (subprocess.CalledProcessError, FileNotFoundError):
-                # Final fallback: try wl-paste + dotool with layout settings
-                try:
-                    logging.debug(
-                        "Attempting to paste using dotool with layout settings"
-                    )
-                    # Load dotool configuration
-                    config_manager = ConfigManager()
-                    dotool_layout = config_manager.load_dotool_layout()
-                    dotool_variant = config_manager.load_dotool_variant()
-
-                    # Build command with optional environment variables
-                    env_vars = []
-                    if dotool_layout:
-                        env_vars.append(f"DOTOOL_XKB_LAYOUT={dotool_layout}")
-                    if dotool_variant:
-                        env_vars.append(f"DOTOOL_XKB_VARIANT={dotool_variant}")
-
-                    env_prefix = " ".join(env_vars)
-                    if env_prefix:
-                        command = f"wl-paste | sed 's/^/type /' | {env_prefix} dotool"
-                    else:
-                        command = "wl-paste | sed 's/^/type /' | dotool"
-
-                    subprocess.run(
-                        command,
-                        shell=True,
-                        check=True,
-                    )
-                    logging.info("Pasted from clipboard (dotool)")
-                    return True
-                except (subprocess.CalledProcessError, FileNotFoundError):
-                    pass
+                pass
 
     # Check if we're on X11
     if os.getenv("DISPLAY"):
-        # Try xdotool for X11
+        # Detect if focused window is a terminal
+        is_terminal = False
         try:
-            subprocess.run(["xdotool", "key", "ctrl+v"], check=True)
-            logging.info("Pasted from clipboard (xdotool)")
+            # Get active window class using xdotool
+            result = subprocess.run(
+                ["xdotool", "getactivewindow", "getwindowclassname"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            window_class = result.stdout.strip().lower()
+            
+            # Also try to get window title as fallback
+            try:
+                title_result = subprocess.run(
+                    ["xdotool", "getactivewindow", "getwindowname"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                window_title = title_result.stdout.strip().lower()
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                window_title = ""
+
+            # Common terminal identifiers
+            terminal_keywords = ["term", "konsole", "kitty", "alacritty", "ghostty", "wezterm", "foot", "gnome-terminal", "xterm", "urxvt", "st"]
+            is_terminal = any(keyword in window_class or keyword in window_title for keyword in terminal_keywords)
+            logging.debug(f"Window class: {window_class}, is_terminal: {is_terminal}")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            logging.debug("Could not detect window type, defaulting to GUI paste")
+
+        # Use xdotool for X11
+        # Use Ctrl+Shift+V for terminals, Ctrl+V for GUI apps
+        try:
+            if is_terminal:
+                logging.debug("Attempting to paste using xdotool with Ctrl+Shift+V (terminal)")
+                subprocess.run(["xdotool", "key", "ctrl+shift+v"], check=True)
+                logging.info("Pasted from clipboard (xdotool with Ctrl+Shift+V)")
+            else:
+                logging.debug("Attempting to paste using xdotool with Ctrl+V (GUI)")
+                subprocess.run(["xdotool", "key", "ctrl+v"], check=True)
+                logging.info("Pasted from clipboard (xdotool with Ctrl+V)")
             return True
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             logging.warning(f"xdotool failed: {e}")
 
     # Fallback: try all available paste tools
+    import time
+    time.sleep(0.1)
     paste_tools = [
         ["xdotool", "key", "ctrl+v"],  # X11
         ["wtype", "-M", "ctrl", "v"],  # Wayland
-        ["ydotool", "key", "ctrl+v"],  # Wayland alternative
+        ["ydotool", "key", "29:1", "47:1", "47:0", "29:0"],  # Wayland alternative (ctrl+v)
     ]
 
     for cmd in paste_tools:
@@ -713,6 +793,13 @@ class WhispypyDaemon:
             stdout=subprocess.PIPE,
         )
         self.recording = True
+        # Create state file for external indicators (e.g., Waybar)
+        try:
+            Path("/tmp/whispypy_recording").touch()
+        except Exception:
+            # State file creation failed, but recording is already started
+            # Log warning but don't abort - recording is more important
+            logging.warning("Failed to create recording state file, but recording continues")
         logging.info("Recording started successfully")
 
     def _stop_recording_and_transcribe(self) -> None:
@@ -723,6 +810,11 @@ class WhispypyDaemon:
             self.pw_record_proc.wait()
             self.pw_record_proc = None
         self.recording = False
+        # Remove state file for external indicators (e.g., Waybar)
+        try:
+            Path("/tmp/whispypy_recording").unlink(missing_ok=True)
+        except Exception:
+            pass
         logging.info("Recording stopped")
 
         # Check if audio file exists and has content
