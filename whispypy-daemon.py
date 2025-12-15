@@ -15,8 +15,8 @@ import subprocess
 import sys
 import tempfile
 import time
-import wave
 from typing import Any, Generator, Optional, Union
+import wave
 
 import numpy as np
 import whisper
@@ -31,12 +31,8 @@ CHANNELS = 1  # Mono audio
 AUDIO_FORMAT = "f32"  # 32-bit float format for PipeWire
 FLOAT32_BYTE_SIZE = 4  # Size of f32 in bytes
 
-# Audio processing constants
-RMS_SILENCE_THRESHOLD = 0.001  # Minimum RMS to distinguish signal from silence
-
 # Timing and validation constants
 DEVICE_TEST_DURATION = 1.0  # seconds - Duration for device validation test
-PROCESS_TERMINATION_TIMEOUT = 2.0  # seconds - Timeout for process cleanup
 
 # File paths (will be replaced with proper temp files)
 TEMP_AUDIO_FILENAME = "whispy_recording"  # Base filename for temporary audio (extension will be added based on engine)
@@ -173,7 +169,7 @@ class SherpaOnnxParakeetInt8Transcriber:
         num_threads: Optional[int] = None,
     ):
         try:
-            import sherpa_onnx  # type: ignore[import-untyped]
+            import sherpa_onnx
         except ImportError as e:
             raise ImportError(
                 "sherpa-onnx is required for engine 'parakeet_onnx_int8'. "
@@ -280,7 +276,7 @@ class SherpaOnnxParakeetInt8Transcriber:
 
         stream.accept_waveform(sample_rate, samples_f32)
         self.recognizer.decode_streams([stream])
-        return stream.result.text.strip()
+        return str(stream.result.text).strip()
 
 
 def get_config_file() -> Path:
@@ -296,92 +292,90 @@ CONFIG_FILE = get_config_file()
 
 
 class ConfigManager:
-    """Manages configuration file operations."""
+    """Manages configuration file operations with cached config parsing."""
 
     def __init__(self, config_file: Path = CONFIG_FILE):
         self.config_file = config_file
+        self._config: Optional[configparser.ConfigParser] = None
+        self._config_mtime: Optional[float] = None
+
+    def _get_config(self) -> Optional[configparser.ConfigParser]:
+        """Get cached config, reloading if file changed."""
+        if not self.config_file.exists():
+            self._config = None
+            self._config_mtime = None
+            return None
+
+        current_mtime = self.config_file.stat().st_mtime
+        if self._config is None or self._config_mtime != current_mtime:
+            self._config = configparser.ConfigParser()
+            self._config.read(self.config_file)
+            self._config_mtime = current_mtime
+
+        return self._config
+
+    def _invalidate_cache(self) -> None:
+        """Invalidate cached config after writes."""
+        self._config = None
+        self._config_mtime = None
+
+    def _load_config_value(
+        self, key: str, log_msg: Optional[str] = None, log_level: str = "info"
+    ) -> Optional[str]:
+        """Generic method to load a config value."""
+        config = self._get_config()
+        if config is None:
+            return None
+
+        try:
+            value = config.get("DEFAULT", key, fallback=None)
+            if value and log_msg:
+                getattr(logging, log_level)(log_msg.format(value=value))
+            return value
+        except Exception as e:
+            logging.debug(f"Error reading {key} from config: {e}")
+            return None
 
     def save_device(self, device: str) -> None:
         """Save device configuration to config file."""
-        config = configparser.ConfigParser()
+        config = self._get_config() or configparser.ConfigParser()
 
-        # Load existing config if it exists
-        if self.config_file.exists():
-            config.read(self.config_file)
-
-        # Ensure [DEFAULT] section exists
         if "DEFAULT" not in config:
             config.add_section("DEFAULT")
 
-        # Save device
         config.set("DEFAULT", "device", device)
 
-        # Write config file
         with open(self.config_file, "w") as f:
             config.write(f)
 
+        self._invalidate_cache()
         logging.info(f"Device '{device}' saved to {self.config_file}")
 
     def load_device(self) -> Optional[str]:
         """Load device configuration from config file."""
-        if not self.config_file.exists():
-            return None
-
-        config = configparser.ConfigParser()
-        try:
-            config.read(self.config_file)
-            device = config.get("DEFAULT", "device", fallback=None)
-            if device:
-                logging.info(f"Using device from config: {device}")
-            return device
-        except Exception as e:
-            logging.error(f"Error reading config file {self.config_file}: {e}")
-            return None
+        return self._load_config_value(
+            "device", "Using device from config: {value}", "info"
+        )
 
     def load_dotool_layout(self) -> Optional[str]:
         """Load DOTOOL_XKB_LAYOUT configuration from config file."""
-        if not self.config_file.exists():
-            return None
-
-        config = configparser.ConfigParser()
-        try:
-            config.read(self.config_file)
-            layout = config.get("DEFAULT", "dotool_xkb_layout", fallback=None)
-            if layout:
-                logging.debug(f"Using dotool XKB layout from config: {layout}")
-            return layout
-        except Exception as e:
-            logging.debug(
-                f"Error reading dotool layout from config file {self.config_file}: {e}"
-            )
-            return None
+        return self._load_config_value(
+            "dotool_xkb_layout", "Using dotool XKB layout from config: {value}", "debug"
+        )
 
     def load_dotool_variant(self) -> Optional[str]:
         """Load DOTOOL_XKB_VARIANT configuration from config file."""
-        if not self.config_file.exists():
-            return None
-
-        config = configparser.ConfigParser()
-        try:
-            config.read(self.config_file)
-            variant = config.get("DEFAULT", "dotool_xkb_variant", fallback=None)
-            if variant:
-                logging.debug(f"Using dotool XKB variant from config: {variant}")
-            return variant
-        except Exception as e:
-            logging.debug(
-                f"Error reading dotool variant from config file {self.config_file}: {e}"
-            )
-            return None
+        return self._load_config_value(
+            "dotool_xkb_variant", "Using dotool XKB variant from config: {value}", "debug"
+        )
 
     def validate_config(self) -> bool:
         """Validate configuration file format and values."""
-        if not self.config_file.exists():
+        config = self._get_config()
+        if config is None:
             return True  # No config file is valid (will use defaults)
 
         try:
-            config = configparser.ConfigParser()
-            config.read(self.config_file)
 
             # Check if DEFAULT section exists
             if "DEFAULT" not in config:
@@ -659,18 +653,14 @@ def copy_to_clipboard(text: str) -> bool:
     return False
 
 
-def paste_from_clipboard() -> bool:
-    """Paste text from clipboard using the appropriate tool for the current display server."""
-    # Check if we're on Wayland
-    if os.getenv("WAYLAND_DISPLAY"):
-        logging.debug("Detected Wayland display server for pasting")
+def _detect_terminal_window() -> bool:
+    """Detect if the focused window is a terminal application.
 
-        # Detect if focused window is a terminal
-        # Note: Uses hyprctl which is Hyprland-specific. Falls back gracefully to GUI paste
-        # if detection fails (e.g., on other Wayland compositors like Sway, River, etc.)
-        is_terminal = False
+    Returns True if terminal detected, False otherwise (including on detection failure).
+    """
+    # Try Wayland (Hyprland) detection first
+    if os.getenv("WAYLAND_DISPLAY"):
         try:
-            # Get active window class using hyprctl (Hyprland compositor)
             result = subprocess.run(
                 ["hyprctl", "activewindow", "-j"],
                 capture_output=True,
@@ -680,12 +670,56 @@ def paste_from_clipboard() -> bool:
             window_info = json.loads(result.stdout)
             window_class = window_info.get("class", "").lower()
             window_title = window_info.get("title", "").lower()
-
-            # Check against common terminal identifiers
-            is_terminal = any(keyword in window_class or keyword in window_title for keyword in TERMINAL_KEYWORDS)
+            is_terminal = any(
+                keyword in window_class or keyword in window_title
+                for keyword in TERMINAL_KEYWORDS
+            )
             logging.debug(f"Window class: {window_class}, is_terminal: {is_terminal}")
+            return is_terminal
         except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError):
-            logging.debug("Could not detect window type, defaulting to GUI paste")
+            pass
+
+    # Try X11 detection
+    if os.getenv("DISPLAY"):
+        try:
+            result = subprocess.run(
+                ["xdotool", "getactivewindow", "getwindowclassname"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            window_class = result.stdout.strip().lower()
+            window_title = ""
+            try:
+                title_result = subprocess.run(
+                    ["xdotool", "getactivewindow", "getwindowname"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                window_title = title_result.stdout.strip().lower()
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                pass
+
+            is_terminal = any(
+                keyword in window_class or keyword in window_title
+                for keyword in TERMINAL_KEYWORDS
+            )
+            logging.debug(f"Window class: {window_class}, is_terminal: {is_terminal}")
+            return is_terminal
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+
+    logging.debug("Could not detect window type, defaulting to GUI paste")
+    return False
+
+
+def paste_from_clipboard() -> bool:
+    """Paste text from clipboard using the appropriate tool for the current display server."""
+    # Check if we're on Wayland
+    if os.getenv("WAYLAND_DISPLAY"):
+        logging.debug("Detected Wayland display server for pasting")
+        is_terminal = _detect_terminal_window()
 
         # Use wtype for Wayland (simulates typing)
         # Use Ctrl+Shift+V for terminals, Ctrl+V for GUI apps
@@ -753,38 +787,9 @@ def paste_from_clipboard() -> bool:
 
     # Check if we're on X11
     if os.getenv("DISPLAY"):
-        # Detect if focused window is a terminal
-        is_terminal = False
-        try:
-            # Get active window class using xdotool
-            result = subprocess.run(
-                ["xdotool", "getactivewindow", "getwindowclassname"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            window_class = result.stdout.strip().lower()
-            
-            # Also try to get window title as fallback
-            try:
-                title_result = subprocess.run(
-                    ["xdotool", "getactivewindow", "getwindowname"],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-                window_title = title_result.stdout.strip().lower()
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                window_title = ""
+        is_terminal = _detect_terminal_window()
 
-            # Check against common terminal identifiers
-            is_terminal = any(keyword in window_class or keyword in window_title for keyword in TERMINAL_KEYWORDS)
-            logging.debug(f"Window class: {window_class}, is_terminal: {is_terminal}")
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            logging.debug("Could not detect window type, defaulting to GUI paste")
-
-        # Use xdotool for X11
-        # Use Ctrl+Shift+V for terminals, Ctrl+V for GUI apps
+        # Use xdotool for X11 - Ctrl+Shift+V for terminals, Ctrl+V for GUI apps
         try:
             if is_terminal:
                 logging.debug("Attempting to paste using xdotool with Ctrl+Shift+V (terminal)")
@@ -901,7 +906,7 @@ class WhispypyDaemon:
     def _load_parakeet_model(self) -> None:
         """Load Parakeet model."""
         try:
-            import nemo.collections.asr as nemo_asr  # type: ignore[import-untyped]
+            import nemo.collections.asr as nemo_asr
         except ImportError:
             raise ImportError(
                 "Parakeet (NeMo) is not available. Please see README for installation instructions."
@@ -935,6 +940,12 @@ class WhispypyDaemon:
         """Return True if device_name looks like a raw ALSA device."""
         return self.device_name.startswith(("hw:", "plughw:"))
 
+    def _get_alsa_device(self) -> str:
+        """Get ALSA device name, converting hw: to plughw: for format conversion."""
+        if self.device_name.startswith("hw:"):
+            return self.device_name.replace("hw:", "plughw:", 1)
+        return self.device_name
+
     def validate_device(self) -> bool:
         """Validate that the audio device exists and is accessible."""
         try:
@@ -949,15 +960,10 @@ class WhispypyDaemon:
 
             if self._is_alsa_device():
                 # ALSA: use arecord with the same device transformation as recording
-                alsa_device = (
-                    self.device_name.replace("hw:", "plughw:", 1)
-                    if self.device_name.startswith("hw:")
-                    else self.device_name
-                )
                 with managed_subprocess(
                     [
                         "arecord",
-                        "-D", alsa_device,
+                        "-D", self._get_alsa_device(),
                         "-f", "S16_LE",
                         "-r", str(SAMPLE_RATE),
                         "-c", str(CHANNELS),
@@ -1042,17 +1048,12 @@ class WhispypyDaemon:
 
         if self._is_alsa_device():
             # ALSA: arecord - use raw 16-bit PCM for Whisper, WAV container for Parakeet
-            alsa_device = (
-                self.device_name.replace("hw:", "plughw:", 1)
-                if self.device_name.startswith("hw:")
-                else self.device_name
-            )
             alsa_container = (
                 "wav" if self.engine in {"parakeet", "parakeet_onnx_int8"} else "raw"
             )
             cmd = [
                 "arecord",
-                "-D", alsa_device,
+                "-D", self._get_alsa_device(),
                 "-f", "S16_LE",
                 "-r", str(SAMPLE_RATE),
                 "-c", str(CHANNELS),
