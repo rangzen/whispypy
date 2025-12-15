@@ -54,8 +54,9 @@ TERMINAL_KEYWORDS = [
     "st",
 ]  # Common terminal identifiers for window class/title matching
 
-# State file for external indicators (e.g., Waybar)
+# State files for external indicators (e.g., Waybar)
 RECORDING_STATE_FILE = Path("/tmp/whispypy_recording")
+READY_STATE_FILE = Path("/tmp/whispypy_ready")
 
 
 def get_config_file() -> Path:
@@ -751,6 +752,12 @@ class WhispypyDaemon:
             self.pw_record_proc.terminate()
             self.pw_record_proc.wait()
 
+        # Remove ready state file
+        try:
+            READY_STATE_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+
         self.running = False
 
     def _handle_sigusr2(self, signum: int, frame: Any) -> None:
@@ -926,6 +933,12 @@ class WhispypyDaemon:
         logging.info("Device validation successful")
         logging.info("Ready. Send SIGUSR2 to start/stop recording.")
         logging.info("Press Ctrl+C to exit.")
+
+        # Create ready state file for external indicators (e.g., Waybar)
+        try:
+            READY_STATE_FILE.touch()
+        except Exception as e:
+            logging.warning(f"Could not create ready state file: {e}")
 
         # Initial beep to indicate readiness
         play_completion_beep()
