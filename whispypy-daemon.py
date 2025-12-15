@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import wave
 from typing import Any, Generator, Optional, Union
 
 import numpy as np
@@ -57,6 +58,211 @@ TERMINAL_KEYWORDS = [
 # State files for external indicators (e.g., Waybar)
 RECORDING_STATE_FILE = Path("/tmp/whispypy_recording")
 READY_STATE_FILE = Path("/tmp/whispypy_ready")
+
+DEFAULT_SHERPA_ONNX_PARAKEET_INT8_MODEL = (
+    "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
+)
+
+
+def _auto_onnx_threads() -> int:
+    cpu_count = os.cpu_count() or 1
+    return max(1, min(4, cpu_count // 2))
+
+
+def _whispypy_cache_dir() -> Path:
+    xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+    base = Path(xdg_cache_home) if xdg_cache_home else (Path.home() / ".cache")
+    return base / "whispypy"
+
+
+def _is_valid_parakeet_onnx_dir(model_dir: Path) -> bool:
+    return all(
+        (model_dir / name).is_file()
+        for name in ("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt")
+    )
+
+
+def ensure_sherpa_onnx_parakeet_model_dir(
+    model_id: str,
+    cache_dir: Optional[Union[str, Path]] = None,
+) -> Path:
+    """Ensure the sherpa-onnx model bundle exists locally; download if missing."""
+    models_root = (
+        Path(cache_dir) if cache_dir is not None else _whispypy_cache_dir()
+    ) / "models"
+    models_root.mkdir(parents=True, exist_ok=True)
+
+    expected_dir = models_root / model_id
+    if _is_valid_parakeet_onnx_dir(expected_dir):
+        return expected_dir
+
+    url = (
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
+        f"{model_id}.tar.bz2"
+    )
+    logging.info("Downloading sherpa-onnx model bundle from %s", url)
+
+    tmp_path: Optional[str] = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".tar.bz2", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        subprocess.run(
+            [
+                "wget",
+                "-O",
+                tmp_path,
+                url,
+            ],
+            check=True,
+        )
+
+        subprocess.run(
+            [
+                "tar",
+                "-xjf",
+                tmp_path,
+                "-C",
+                str(models_root),
+            ],
+            check=True,
+        )
+    finally:
+        if tmp_path:
+            Path(tmp_path).unlink(missing_ok=True)
+
+    if _is_valid_parakeet_onnx_dir(expected_dir):
+        return expected_dir
+
+    # Some archives may not extract to the expected directory name.
+    candidates = [
+        p for p in models_root.iterdir() if p.is_dir() and _is_valid_parakeet_onnx_dir(p)
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+
+    raise FileNotFoundError(
+        f"Downloaded model bundle but could not find required files under {models_root}. "
+        f"Expected {expected_dir} with encoder/decoder/joiner/tokens."
+    )
+
+
+class SherpaOnnxParakeetInt8Transcriber:
+    def __init__(
+        self,
+        model_dir: Union[str, Path],
+        provider: str = "cpu",
+        num_threads: Optional[int] = None,
+    ):
+        try:
+            import sherpa_onnx  # type: ignore[import-untyped]
+        except ImportError as e:
+            raise ImportError(
+                "sherpa-onnx is required for engine 'parakeet_onnx_int8'. "
+                "Install with the optional extra (to be added): whispypy[parakeet-onnx]"
+            ) from e
+
+        self._sherpa_onnx = sherpa_onnx
+        self.model_dir = Path(model_dir)
+
+        encoder = self.model_dir / "encoder.int8.onnx"
+        decoder = self.model_dir / "decoder.int8.onnx"
+        joiner = self.model_dir / "joiner.int8.onnx"
+        tokens = self.model_dir / "tokens.txt"
+
+        missing = [
+            str(p)
+            for p in (encoder, decoder, joiner, tokens)
+            if not p.is_file()
+        ]
+        if missing:
+            raise FileNotFoundError(
+                "Missing required Parakeet INT8 files in model dir. Missing: "
+                + ", ".join(missing)
+            )
+
+        self.num_threads = num_threads if num_threads is not None else _auto_onnx_threads()
+        self.provider = provider
+
+        model_load_start = time.time()
+
+        kwargs: dict[str, Any] = dict(
+            encoder=str(encoder),
+            decoder=str(decoder),
+            joiner=str(joiner),
+            tokens=str(tokens),
+            num_threads=self.num_threads,
+            sample_rate=SAMPLE_RATE,
+            feature_dim=80,
+            decoding_method="greedy_search",
+            model_type="nemo_transducer",
+            debug=False,
+        )
+
+        # Provider support varies by sherpa-onnx version; try best-effort.
+        if self.provider in {"cpu", "cuda"}:
+            kwargs["provider"] = self.provider
+
+        try:
+            try:
+                self.recognizer = self._sherpa_onnx.OfflineRecognizer.from_transducer(
+                    **kwargs
+                )
+            except TypeError:
+                # Older sherpa-onnx may not accept provider/model_type kwargs.
+                kwargs.pop("provider", None)
+                kwargs.pop("model_type", None)
+                self.recognizer = self._sherpa_onnx.OfflineRecognizer.from_transducer(
+                    **kwargs
+                )
+        except Exception as e:
+            if self.provider == "cuda":
+                logging.warning(
+                    "Failed to initialize sherpa-onnx with provider=cuda (%s); falling back to cpu",
+                    e,
+                )
+                self.provider = "cpu"
+                kwargs["provider"] = "cpu"
+                try:
+                    self.recognizer = self._sherpa_onnx.OfflineRecognizer.from_transducer(
+                        **kwargs
+                    )
+                except TypeError:
+                    kwargs.pop("provider", None)
+                    kwargs.pop("model_type", None)
+                    self.recognizer = self._sherpa_onnx.OfflineRecognizer.from_transducer(
+                        **kwargs
+                    )
+            else:
+                raise
+
+        model_load_time = time.time() - model_load_start
+        logging.info(
+            "Sherpa-ONNX Parakeet INT8 model loaded in %.2f seconds (provider=%s, threads=%s)",
+            model_load_time,
+            self.provider,
+            self.num_threads,
+        )
+
+    def transcribe_wav(self, wav_path: Union[str, Path]) -> str:
+        stream = self.recognizer.create_stream()
+
+        with wave.open(str(wav_path)) as wf:
+            if wf.getnchannels() != 1:
+                raise ValueError(f"Expected mono wav, got channels={wf.getnchannels()}")
+            if wf.getsampwidth() != 2:
+                raise ValueError(
+                    f"Expected 16-bit PCM wav, got sampwidth={wf.getsampwidth()} bytes"
+                )
+            num_frames = wf.getnframes()
+            pcm = wf.readframes(num_frames)
+            samples_i16 = np.frombuffer(pcm, dtype=np.int16)
+            samples_f32 = samples_i16.astype(np.float32) / 32768.0
+            sample_rate = wf.getframerate()
+
+        stream.accept_waveform(sample_rate, samples_f32)
+        self.recognizer.decode_streams([stream])
+        return stream.result.text.strip()
 
 
 def get_config_file() -> Path:
@@ -619,17 +825,23 @@ class WhispypyDaemon:
         model_path: str,
         device_name: str,
         engine: str = "whisper",
+        parakeet_onnx_dir: Optional[str] = None,
+        onnx_provider: str = "cpu",
+        onnx_threads: Optional[int] = None,
         keep_audio: bool = False,
         autopaste: bool = False,
     ):
         self.model_path = model_path
         self.device_name = device_name
         self.engine = engine
+        self.parakeet_onnx_dir = parakeet_onnx_dir
+        self.onnx_provider = onnx_provider
+        self.onnx_threads = onnx_threads
         self.keep_audio = keep_audio
         self.autopaste = autopaste
 
         # Create temporary file for audio recording with appropriate extension
-        audio_extension = ".wav" if engine == "parakeet" else ".au"
+        audio_extension = ".wav" if engine in {"parakeet", "parakeet_onnx_int8"} else ".au"
         self.temp_audio_file = Path(tempfile.gettempdir()) / (
             TEMP_AUDIO_FILENAME + audio_extension
         )
@@ -647,6 +859,8 @@ class WhispypyDaemon:
             self._load_whisper_model()
         elif self.engine == "parakeet":
             self._load_parakeet_model()
+        elif self.engine == "parakeet_onnx_int8":
+            self._load_parakeet_onnx_int8_model()
         else:
             raise ValueError(f"Unsupported engine: {self.engine}")
 
@@ -679,6 +893,19 @@ class WhispypyDaemon:
         model_load_time = time.time() - model_load_start
         logging.info(f"Parakeet model loaded in {model_load_time:.2f} seconds")
 
+    def _load_parakeet_onnx_int8_model(self) -> None:
+        """Load Parakeet INT8 model via sherpa-onnx."""
+        if not self.parakeet_onnx_dir:
+            raise ValueError(
+                "--parakeet-onnx-dir is required when --engine parakeet_onnx_int8"
+            )
+
+        self.model = SherpaOnnxParakeetInt8Transcriber(
+            model_dir=self.parakeet_onnx_dir,
+            provider=self.onnx_provider,
+            num_threads=self.onnx_threads,
+        )
+
     def _is_alsa_device(self) -> bool:
         """Return True if device_name looks like a raw ALSA device."""
         return self.device_name.startswith(("hw:", "plughw:"))
@@ -687,7 +914,9 @@ class WhispypyDaemon:
         """Validate that the audio device exists and is accessible."""
         try:
             # Test device by attempting a very short recording
-            audio_extension = ".wav" if self.engine == "parakeet" else ".au"
+            audio_extension = (
+                ".wav" if self.engine in {"parakeet", "parakeet_onnx_int8"} else ".au"
+            )
             with tempfile.NamedTemporaryFile(
                 suffix=audio_extension, delete=False
             ) as test_file:
@@ -714,11 +943,14 @@ class WhispypyDaemon:
                     time.sleep(DEVICE_TEST_DURATION)
             else:
                 # PipeWire: use pw-record
+                pw_format = AUDIO_FORMAT
+                if self.engine == "parakeet_onnx_int8":
+                    pw_format = "s16"
                 with managed_subprocess(
                     [
                         "pw-record",
                         f"--target={self.device_name}",
-                        f"--format={AUDIO_FORMAT}",
+                        f"--format={pw_format}",
                         f"--rate={SAMPLE_RATE}",
                         f"--channels={CHANNELS}",
                         test_file_path,
@@ -790,7 +1022,9 @@ class WhispypyDaemon:
                 if self.device_name.startswith("hw:")
                 else self.device_name
             )
-            alsa_container = "wav" if self.engine == "parakeet" else "raw"
+            alsa_container = (
+                "wav" if self.engine in {"parakeet", "parakeet_onnx_int8"} else "raw"
+            )
             cmd = [
                 "arecord",
                 "-D", alsa_device,
@@ -802,10 +1036,13 @@ class WhispypyDaemon:
             ]
         else:
             # PipeWire: pw-record
+            pw_format = AUDIO_FORMAT
+            if self.engine == "parakeet_onnx_int8":
+                pw_format = "s16"
             cmd = [
                 "pw-record",
                 f"--target={self.device_name}",
-                f"--format={AUDIO_FORMAT}",
+                f"--format={pw_format}",
                 f"--rate={SAMPLE_RATE}",
                 f"--channels={CHANNELS}",
                 str(self.temp_audio_file),
@@ -874,6 +1111,8 @@ class WhispypyDaemon:
             # Parakeet expects a list of file paths
             result = self.model.transcribe([str(self.temp_audio_file)])
             text = result[0].text.strip()
+        elif self.engine == "parakeet_onnx_int8":
+            text = self.model.transcribe_wav(self.temp_audio_file)
         else:
             raise ValueError(f"Unsupported engine: {self.engine}")
 
@@ -962,14 +1201,52 @@ def main() -> None:
         "model_path",
         nargs="?",
         default="base",
-        help="Path to the model or model name. For Whisper: tiny, base, small, medium, large, large-v2, large-v3. For Parakeet: nvidia/parakeet-tdt-0.6b-v3 (default: base)",
+        help=(
+            "Path to the model or model name. "
+            "For Whisper: tiny, base, small, medium, large, large-v2, large-v3. "
+            "For Parakeet (NeMo): nvidia/parakeet-tdt-0.6b-v3. "
+            "For Parakeet INT8 (Sherpa-ONNX): optionally pass a sherpa-onnx bundle id as the positional argument (default: base)"
+        ),
     )
     parser.add_argument(
         "--engine",
         "-e",
-        choices=["whisper", "parakeet"],
+        choices=["whisper", "parakeet", "parakeet_onnx_int8"],
         default="whisper",
         help="Transcription engine to use (default: whisper)",
+    )
+
+    parser.add_argument(
+        "--parakeet-onnx-dir",
+        default=None,
+        help="Directory containing encoder.int8.onnx/decoder.int8.onnx/joiner.int8.onnx/tokens.txt. If omitted, whispypy will auto-download the model bundle.",
+    )
+    parser.add_argument(
+        "--parakeet-onnx-model-id",
+        default=DEFAULT_SHERPA_ONNX_PARAKEET_INT8_MODEL,
+        help="Sherpa-ONNX model bundle ID to download when --parakeet-onnx-dir is omitted",
+    )
+    parser.add_argument(
+        "--parakeet-onnx-cache-dir",
+        default=None,
+        help="Override cache directory for auto-downloaded sherpa-onnx models (defaults to XDG cache)",
+    )
+    parser.add_argument(
+        "--onnx-provider",
+        choices=["cpu", "cuda"],
+        default="cpu",
+        help="Execution provider for sherpa-onnx (default: cpu). If cuda is unavailable, it will fall back to cpu.",
+    )
+    parser.add_argument(
+        "--onnx-threads",
+        type=int,
+        default=None,
+        help="Number of threads for sherpa-onnx (default: auto)",
+    )
+    parser.add_argument(
+        "--check-model",
+        action="store_true",
+        help="Load the selected model and exit (useful for verifying parakeet_onnx_int8 setup)",
     )
     parser.add_argument(
         "--device",
@@ -1008,6 +1285,45 @@ def main() -> None:
             logging.error("Please see README for installation instructions.")
             sys.exit(1)
 
+    if args.engine == "parakeet_onnx_int8":
+        if importlib.util.find_spec("sherpa_onnx") is None:
+            logging.error("parakeet_onnx_int8 engine selected but sherpa-onnx is not available.")
+            sys.exit(1)
+
+        model_id = args.parakeet_onnx_model_id
+
+        # Mimic the whisper/nemo flow: positional argument selects model.
+        if args.model_path != "base":
+            if not args.model_path.startswith("sherpa-onnx-"):
+                logging.error(
+                    "For --engine parakeet_onnx_int8, the positional model must be a sherpa-onnx model bundle id starting with 'sherpa-onnx-' (got: %s). "
+                    "Either omit the positional argument to use the default, or use --parakeet-onnx-model-id, or use --parakeet-onnx-dir.",
+                    args.model_path,
+                )
+                sys.exit(1)
+            model_id = args.model_path
+
+        if not args.parakeet_onnx_dir:
+            try:
+                args.parakeet_onnx_dir = str(
+                    ensure_sherpa_onnx_parakeet_model_dir(
+                        model_id=model_id,
+                        cache_dir=args.parakeet_onnx_cache_dir,
+                    )
+                )
+            except Exception as e:
+                logging.error("Failed to auto-download sherpa-onnx model bundle: %s", e)
+                sys.exit(1)
+
+        if args.check_model:
+            SherpaOnnxParakeetInt8Transcriber(
+                model_dir=args.parakeet_onnx_dir,
+                provider=args.onnx_provider,
+                num_threads=args.onnx_threads,
+            )
+            logging.info("Model loaded successfully")
+            return
+
     # Handle device configuration
     config_manager = ConfigManager()
 
@@ -1034,6 +1350,9 @@ def main() -> None:
         model_path=args.model_path,
         device_name=device_name,
         engine=args.engine,
+        parakeet_onnx_dir=args.parakeet_onnx_dir,
+        onnx_provider=args.onnx_provider,
+        onnx_threads=args.onnx_threads,
         keep_audio=args.keep_audio,
         autopaste=args.autopaste,
     )
