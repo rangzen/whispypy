@@ -46,7 +46,7 @@ Beeps are from [LaSonotheque of Joseph Sardin](https://lasonotheque.org).
   - X11: `xdotool`
 
 - **Auto-download tools (optional, for Parakeet INT8 bundle download):**
-  - `wget`, `tar`
+  - `curl` (preferred) or `wget`, plus `tar`
 
 ## Installation
 
@@ -104,13 +104,15 @@ uv run python whispypy-daemon.py --engine parakeet_onnx_int8 --check-model
 **First-run download behavior:**
 
 - If you do not pass `--parakeet-onnx-dir`, `whispypy` downloads the bundle from the
-  `k2-fsa/sherpa-onnx` GitHub Releases (tag `asr-models`) using `wget` and extracts it with `tar`.
+  `k2-fsa/sherpa-onnx` GitHub Releases (tag `asr-models`) using `curl` (or `wget`) and extracts it with `tar`.
 - Default bundle id: `sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8`
 - Cache location:
 
   ```text
   ${XDG_CACHE_HOME:-~/.cache}/whispypy/models/
   ```
+
+> `--parakeet-onnx-dir` is optional and intended as an override to use a pre-downloaded bundle.
 
 **Selecting a different bundle:**
 

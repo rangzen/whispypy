@@ -8,6 +8,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import shutil
 import signal
 import struct
 import subprocess
@@ -107,13 +108,30 @@ def ensure_sherpa_onnx_parakeet_model_dir(
         with tempfile.NamedTemporaryFile(suffix=".tar.bz2", delete=False) as tmp:
             tmp_path = tmp.name
 
-        subprocess.run(
-            [
+        if shutil.which("curl"):
+            download_cmd = [
+                "curl",
+                "-L",
+                "-f",
+                "-o",
+                tmp_path,
+                url,
+            ]
+        elif shutil.which("wget"):
+            download_cmd = [
                 "wget",
                 "-O",
                 tmp_path,
                 url,
-            ],
+            ]
+        else:
+            raise RuntimeError(
+                "Auto-download requires either 'curl' or 'wget' to be installed. "
+                "Install one of them, or pass --parakeet-onnx-dir to point to a pre-downloaded bundle."
+            )
+
+        subprocess.run(
+            download_cmd,
             check=True,
         )
 
@@ -826,6 +844,8 @@ class WhispypyDaemon:
         device_name: str,
         engine: str = "whisper",
         parakeet_onnx_dir: Optional[str] = None,
+        parakeet_onnx_model_id: str = DEFAULT_SHERPA_ONNX_PARAKEET_INT8_MODEL,
+        parakeet_onnx_cache_dir: Optional[str] = None,
         onnx_provider: str = "cpu",
         onnx_threads: Optional[int] = None,
         keep_audio: bool = False,
@@ -835,6 +855,8 @@ class WhispypyDaemon:
         self.device_name = device_name
         self.engine = engine
         self.parakeet_onnx_dir = parakeet_onnx_dir
+        self.parakeet_onnx_model_id = parakeet_onnx_model_id
+        self.parakeet_onnx_cache_dir = parakeet_onnx_cache_dir
         self.onnx_provider = onnx_provider
         self.onnx_threads = onnx_threads
         self.keep_audio = keep_audio
@@ -896,8 +918,11 @@ class WhispypyDaemon:
     def _load_parakeet_onnx_int8_model(self) -> None:
         """Load Parakeet INT8 model via sherpa-onnx."""
         if not self.parakeet_onnx_dir:
-            raise ValueError(
-                "--parakeet-onnx-dir is required when --engine parakeet_onnx_int8"
+            self.parakeet_onnx_dir = str(
+                ensure_sherpa_onnx_parakeet_model_dir(
+                    model_id=self.parakeet_onnx_model_id,
+                    cache_dir=self.parakeet_onnx_cache_dir,
+                )
             )
 
         self.model = SherpaOnnxParakeetInt8Transcriber(
@@ -1303,21 +1328,26 @@ def main() -> None:
                 sys.exit(1)
             model_id = args.model_path
 
-        if not args.parakeet_onnx_dir:
+        # Persist selected bundle id so the daemon can auto-download when --parakeet-onnx-dir is omitted.
+        args.parakeet_onnx_model_id = model_id
+
+        if args.check_model:
             try:
-                args.parakeet_onnx_dir = str(
-                    ensure_sherpa_onnx_parakeet_model_dir(
-                        model_id=model_id,
-                        cache_dir=args.parakeet_onnx_cache_dir,
+                model_dir = args.parakeet_onnx_dir
+                if not model_dir:
+                    model_dir = str(
+                        ensure_sherpa_onnx_parakeet_model_dir(
+                            model_id=model_id,
+                            cache_dir=args.parakeet_onnx_cache_dir,
+                        )
                     )
-                )
+
             except Exception as e:
                 logging.error("Failed to auto-download sherpa-onnx model bundle: %s", e)
                 sys.exit(1)
 
-        if args.check_model:
             SherpaOnnxParakeetInt8Transcriber(
-                model_dir=args.parakeet_onnx_dir,
+                model_dir=model_dir,
                 provider=args.onnx_provider,
                 num_threads=args.onnx_threads,
             )
@@ -1351,6 +1381,8 @@ def main() -> None:
         device_name=device_name,
         engine=args.engine,
         parakeet_onnx_dir=args.parakeet_onnx_dir,
+        parakeet_onnx_model_id=args.parakeet_onnx_model_id,
+        parakeet_onnx_cache_dir=args.parakeet_onnx_cache_dir,
         onnx_provider=args.onnx_provider,
         onnx_threads=args.onnx_threads,
         keep_audio=args.keep_audio,
