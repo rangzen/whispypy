@@ -22,6 +22,7 @@ Beeps are from [LaSonotheque of Joseph Sardin](https://lasonotheque.org).
 - 🤖 Multiple transcription engines:
   - **OpenAI Whisper** (default): Multiple model sizes (tiny to large-v3)
   - **NVIDIA Parakeet**: High-performance ASR model (nvidia/parakeet-tdt-0.6b-v3)
+  - **NVIDIA Parakeet INT8 (Sherpa-ONNX)**: CPU-friendly ONNX engine (auto-downloads a prebuilt model bundle on first run)
 - 📋 Automatic clipboard integration (Wayland/X11)
 - � Auto-paste functionality (automatically paste transcribed text)
 - �🔧 Configurable audio input devices with persistent configuration
@@ -33,6 +34,7 @@ Beeps are from [LaSonotheque of Joseph Sardin](https://lasonotheque.org).
 - **Transcription engines:**
   - OpenAI Whisper (default, always available)
   - NVIDIA Parakeet (optional): Requires `nemo_toolkit[asr]`
+  - NVIDIA Parakeet INT8 (optional): Requires `sherpa-onnx`
 - **Audio system:**
   - PipeWire (preferred): `pw-record`, `pw-cli`
   - ALSA (fallback): `arecord`
@@ -42,6 +44,9 @@ Beeps are from [LaSonotheque of Joseph Sardin](https://lasonotheque.org).
 - **Auto-paste tools (optional, for `--autopaste` feature):**
   - Wayland: `wtype` or `ydotool`
   - X11: `xdotool`
+
+- **Auto-download tools (optional, for Parakeet INT8 bundle download):**
+  - `curl` (preferred) or `wget`, plus `tar`
 
 ## Installation
 
@@ -74,6 +79,61 @@ uv pip install onnx==1.18.0
 > **Note:** NeMo installation is large (~2GB) and may take some time. Whisper works out of the box without additional dependencies.
 > See <https://github.com/onnx/onnx/issues/7249> for ONNX installation issues.
 
+### Optional: Install Parakeet INT8 (Sherpa-ONNX) Engine
+
+This engine runs Parakeet using Sherpa-ONNX and an INT8 ONNX model bundle.
+
+**Install:**
+
+```bash
+# Install optional extra
+uv sync --extra parakeet-onnx
+
+# Alternative
+uv pip install ".[parakeet-onnx]"
+```
+
+**Verify (recommended):**
+
+This will load the model (and auto-download it on first run) and then exit.
+
+```bash
+uv run python whispypy-daemon.py --engine parakeet_onnx_int8 --check-model
+```
+
+**First-run download behavior:**
+
+- If you do not pass `--parakeet-onnx-dir`, `whispypy` downloads the bundle from the
+  `k2-fsa/sherpa-onnx` GitHub Releases (tag `asr-models`) using `curl` (or `wget`) and extracts it with `tar`.
+- Default bundle id: `sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8`
+- Cache location:
+
+  ```text
+  ${XDG_CACHE_HOME:-~/.cache}/whispypy/models/
+  ```
+
+> `--parakeet-onnx-dir` is optional and intended as an override to use a pre-downloaded bundle.
+
+**Selecting a different bundle:**
+
+```bash
+# Use a specific Sherpa-ONNX bundle id as the positional argument
+uv run python whispypy-daemon.py --engine parakeet_onnx_int8 sherpa-onnx-... -d "your_device_name"
+
+# Or via flag (when not using positional)
+uv run python whispypy-daemon.py --engine parakeet_onnx_int8 --parakeet-onnx-model-id sherpa-onnx-...
+```
+
+**CUDA (optional):**
+
+If your `sherpa-onnx` installation includes CUDA support, you can request it with:
+
+```bash
+uv run python whispypy-daemon.py --engine parakeet_onnx_int8 --onnx-provider cuda
+```
+
+If CUDA isn't available, `whispypy` will fall back to CPU.
+
 ## Usage
 
 ### Quick Start
@@ -95,6 +155,9 @@ uv pip install onnx==1.18.0
 
    # Use Parakeet engine (requires NeMo installation)
    uv run python whispypy-daemon.py --engine parakeet nvidia/parakeet-tdt-0.6b-v3 -d "your_device_name"
+
+   # Use Parakeet INT8 via Sherpa-ONNX (auto-download model bundle on first run)
+   uv run python whispypy-daemon.py --engine parakeet_onnx_int8 -d "your_device_name"
    ```
 
 3. **Control recording:**
@@ -172,6 +235,12 @@ uv run python whispypy-daemon.py -d "alsa_input.pci-0000_00_1f.3-platform-skl_hd
 # Use Parakeet engine (requires NeMo installation)
 uv run python whispypy-daemon.py --engine parakeet nvidia/parakeet-tdt-0.6b-v3 -d "your_device_name"
 
+# Use Parakeet INT8 via Sherpa-ONNX (auto-download model bundle on first run)
+uv run python whispypy-daemon.py --engine parakeet_onnx_int8 -d "your_device_name"
+
+# Select a specific Sherpa-ONNX bundle id (positional argument)
+uv run python whispypy-daemon.py --engine parakeet_onnx_int8 sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8 -d "your_device_name"
+
 # With specific Whisper model (loads device from config)
 uv run python whispypy-daemon.py large-v3
 
@@ -223,13 +292,19 @@ kill -SIGINT 12345
 #### whispypy-daemon.py
 
 ```text
-usage: whispypy-daemon.py [-h] [--engine {whisper,parakeet}] [--device DEVICE] [--keep-audio] [--autopaste] [--verbose] [model_path]
+usage: whispypy-daemon.py [-h] [--engine {whisper,parakeet,parakeet_onnx_int8}] [--parakeet-onnx-dir PARAKEET_ONNX_DIR] [--parakeet-onnx-model-id PARAKEET_ONNX_MODEL_ID] [--parakeet-onnx-cache-dir PARAKEET_ONNX_CACHE_DIR] [--onnx-provider {cpu,cuda}] [--onnx-threads ONNX_THREADS] [--check-model] [--device DEVICE] [--keep-audio] [--autopaste] [--verbose] [model_path]
 
 Arguments:
-  model_path           Model path or name. For Whisper: tiny, base, small, medium, large, large-v2, large-v3. For Parakeet: nvidia/parakeet-tdt-0.6b-v3 (default: base)
+  model_path           Model path or name. For Whisper: tiny, base, small, medium, large, large-v2, large-v3. For Parakeet: nvidia/parakeet-tdt-0.6b-v3. For parakeet_onnx_int8: optional sherpa-onnx bundle id (omit or use "base" to use default from --parakeet-onnx-model-id)
 
 Options:
-  --engine, -e {whisper,parakeet}  Transcription engine to use (default: whisper)
+  --engine, -e {whisper,parakeet,parakeet_onnx_int8}  Transcription engine to use (default: whisper)
+  --parakeet-onnx-dir PARAKEET_ONNX_DIR                Directory with encoder/decoder/joiner/tokens (advanced; bypass auto-download)
+  --parakeet-onnx-model-id PARAKEET_ONNX_MODEL_ID      Sherpa-ONNX bundle id to download (default: sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8)
+  --parakeet-onnx-cache-dir PARAKEET_ONNX_CACHE_DIR    Override cache directory for auto-downloaded bundles
+  --onnx-provider {cpu,cuda}                           Execution provider for sherpa-onnx (cuda falls back to cpu if unavailable)
+  --onnx-threads ONNX_THREADS                          Number of threads for sherpa-onnx (default: auto)
+  --check-model                                       Load the selected model and exit
   --device, -d DEVICE              Audio input device name. If not provided, loads from ~/.config/whispypy/config.conf
   --keep-audio                     Keep temporary audio files
   --autopaste                      Automatically paste transcribed text after copying to clipboard
@@ -265,6 +340,15 @@ uv run python whispypy-daemon.py --engine parakeet nvidia/parakeet-tdt-0.6b-v3
 
 # Parakeet with device specification (first time)
 uv run python whispypy-daemon.py -e parakeet nvidia/parakeet-tdt-0.6b-v3 -d "your_device"
+
+# Parakeet INT8 via Sherpa-ONNX (auto-download model bundle on first run)
+uv run python whispypy-daemon.py --engine parakeet_onnx_int8
+
+# Parakeet INT8 via Sherpa-ONNX (explicit bundle id as positional argument)
+uv run python whispypy-daemon.py --engine parakeet_onnx_int8 sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
+
+# Parakeet INT8 via Sherpa-ONNX (prefer CUDA; falls back to CPU)
+uv run python whispypy-daemon.py --engine parakeet_onnx_int8 --onnx-provider cuda
 ```
 
 #### Advanced Usage

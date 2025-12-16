@@ -8,6 +8,11 @@ dependencies = [
     "openai-whisper>=20250625",
 ]
 
+[project.optional-dependencies]
+parakeet-onnx = [
+    "sherpa-onnx",
+]
+
 [dependency-groups]
 dev = [
     "mypy>=1.18.2",
