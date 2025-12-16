@@ -42,7 +42,7 @@ Beeps are from [LaSonotheque of Joseph Sardin](https://lasonotheque.org).
   - Wayland: `wl-copy`
   - X11: `xclip` or `xsel`
 - **Auto-paste tools (optional, for `--autopaste` feature):**
-  - Wayland: `wtype` or `ydotool`
+  - Wayland: `wtype`, `ydotool` or `dotool` (especially for non QWERTY layouts)
   - X11: `xdotool`
 
 - **Auto-download tools (optional, for Parakeet INT8 bundle download):**
@@ -382,7 +382,7 @@ The `--autopaste` flag enables automatic pasting of transcribed text directly in
 
 **Requirements for auto-paste:**
 
-- **Wayland**: Install `wtype`, `ydotool`, or `dotool`
+- **Wayland**: Install `wtype`, `ydotool`, or `dotool` (especially for non QWERTY layouts)
 
   ```bash
   # Debian/Ubuntu
