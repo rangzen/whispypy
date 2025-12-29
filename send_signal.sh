@@ -1,17 +1,17 @@
 #!/bin/bash
 
-# Helper script to send SIGUSR2 to whispypy-daemon.py
+# Helper script to send SIGUSR2 to whispypy
 
-# Find the PID of the whispypy-daemon.py process (exclude uv wrapper)
-PID=$(ps aux | grep "whispypy-daemon.py" | grep -v "uv run" | grep -v grep | awk '{print $2}' | head -1)
+# Find the PID of the whispypy process (exclude uv wrapper)
+PID=$(ps aux | grep "whispypy" | grep -v "uv run" | grep -v grep | grep -v ruff | awk '{print $2}' | head -1)
 
 if [ -z "$PID" ]; then
-    echo "Error: whispypy-daemon.py process not found!"
+    echo "Error: whispypy process not found!"
     echo "Make sure the script is running first."
     exit 1
 fi
 
-echo "Found whispypy-daemon.py process with PID: $PID"
+echo "Found whispypy process with PID: $PID"
 echo "Sending SIGUSR2 signal..."
 
 kill -USR2 "$PID"

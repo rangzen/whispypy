@@ -8,7 +8,7 @@ This is a Python rewrite of [whispy](https://github.com/daaku/whispy) - a signal
 
 ### Signal-Based Recording Flow
 
-- **Main daemon**: `whispypy-daemon.py` - signal-driven audio recording and transcription
+- **Main daemon**: signal-driven audio recording and transcription
 - **Device testing**: `test_audio_devices.py` - discovers and validates audio input devices
 - **Signal helper**: `send_signal.sh` - convenience script for sending SIGUSR2 signals
 
@@ -62,13 +62,13 @@ uv run python test_audio_devices.py
 
 ```bash
 # Start daemon with specific device (required for most systems)
-uv run python whispypy-daemon.py -d "device_name_from_test_script"
+uv run whispypy -d "device_name_from_test_script"
 
 # Send recording signals
 kill -USR2 <pid>  # or use send_signal.sh
 
 # Debug with verbose output
-uv run python whispypy-daemon.py --print-text --keep-audio -d "device_name"
+uv run whispypy --print-text --keep-audio -d "device_name"
 ```
 
 ### Package Management & Environment

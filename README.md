@@ -98,7 +98,7 @@ uv pip install ".[parakeet-onnx]"
 This will load the model (and auto-download it on first run) and then exit.
 
 ```bash
-uv run python whispypy-daemon.py --engine parakeet_onnx_int8 --check-model
+uv run whispypy --engine parakeet_onnx_int8 --check-model
 ```
 
 **First-run download behavior:**
@@ -118,10 +118,10 @@ uv run python whispypy-daemon.py --engine parakeet_onnx_int8 --check-model
 
 ```bash
 # Use a specific Sherpa-ONNX bundle id as the positional argument
-uv run python whispypy-daemon.py --engine parakeet_onnx_int8 sherpa-onnx-... -d "your_device_name"
+uv run whispypy --engine parakeet_onnx_int8 sherpa-onnx-... -d "your_device_name"
 
 # Or via flag (when not using positional)
-uv run python whispypy-daemon.py --engine parakeet_onnx_int8 --parakeet-onnx-model-id sherpa-onnx-...
+uv run whispypy --engine parakeet_onnx_int8 --parakeet-onnx-model-id sherpa-onnx-...
 ```
 
 **CUDA (optional):**
@@ -129,7 +129,7 @@ uv run python whispypy-daemon.py --engine parakeet_onnx_int8 --parakeet-onnx-mod
 If your `sherpa-onnx` installation includes CUDA support, you can request it with:
 
 ```bash
-uv run python whispypy-daemon.py --engine parakeet_onnx_int8 --onnx-provider cuda
+uv run whispypy --engine parakeet_onnx_int8 --onnx-provider cuda
 ```
 
 If CUDA isn't available, `whispypy` will fall back to CPU.
@@ -148,16 +148,16 @@ If CUDA isn't available, `whispypy` will fall back to CPU.
 
    ```bash
    # Default (Whisper engine) - first time saves device to config file
-   uv run python whispypy-daemon.py -d "your_device_name"
+   uv run whispypy -d "your_device_name"
 
    # Subsequent runs - automatically uses saved device
-   uv run python whispypy-daemon.py
+   uv run whispypy
 
    # Use Parakeet engine (requires NeMo installation)
-   uv run python whispypy-daemon.py --engine parakeet nvidia/parakeet-tdt-0.6b-v3 -d "your_device_name"
+   uv run whispypy --engine parakeet nvidia/parakeet-tdt-0.6b-v3 -d "your_device_name"
 
    # Use Parakeet INT8 via Sherpa-ONNX (auto-download model bundle on first run)
-   uv run python whispypy-daemon.py --engine parakeet_onnx_int8 -d "your_device_name"
+   uv run whispypy --engine parakeet_onnx_int8 -d "your_device_name"
    ```
 
 3. **Control recording:**
@@ -175,7 +175,7 @@ If CUDA isn't available, `whispypy` will fall back to CPU.
 
 4. **Add a shortcut key:**
 
-   Use your desktop environment's keyboard settings to bind a key combination to run `./send_signal.sh` or `pkill -SIGUSR2 -f whispypy-daemon.py`.
+   Use your desktop environment's keyboard settings to bind a key combination to run `./send_signal.sh`.
 
 On Ubuntu, you can create a custom shortcut in Settings > Keyboard > Keyboard Shortcuts > View and Customize Shortcuts > Custom Shortcuts. Click the "+" button, name it "Whispypy Toggle Recording", and set the command to the full path of `send_signal.sh` or the pkill command.
 E.g. for me, `sh -c -- "~/sources/whispypy/send_signal.sh"`.
@@ -224,31 +224,31 @@ Copy the working device name from step 1 and use it with the daemon:
 
 ```bash
 # First time - specify device and save to config (default Whisper engine)
-uv run python whispypy-daemon.py --device "alsa_input.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__hw_sofhdadsp_6__source"
+uv run whispypy --device "alsa_input.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__hw_sofhdadsp_6__source"
 
 # Subsequent runs - device loaded automatically from config
-uv run python whispypy-daemon.py
+uv run whispypy
 
 # Or with short flag for first time
-uv run python whispypy-daemon.py -d "alsa_input.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__hw_sofhdadsp_6__source"
+uv run whispypy -d "alsa_input.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__hw_sofhdadsp_6__source"
 
 # Use Parakeet engine (requires NeMo installation)
-uv run python whispypy-daemon.py --engine parakeet nvidia/parakeet-tdt-0.6b-v3 -d "your_device_name"
+uv run whispypy --engine parakeet nvidia/parakeet-tdt-0.6b-v3 -d "your_device_name"
 
 # Use Parakeet INT8 via Sherpa-ONNX (auto-download model bundle on first run)
-uv run python whispypy-daemon.py --engine parakeet_onnx_int8 -d "your_device_name"
+uv run whispypy --engine parakeet_onnx_int8 -d "your_device_name"
 
 # Select a specific Sherpa-ONNX bundle id (positional argument)
-uv run python whispypy-daemon.py --engine parakeet_onnx_int8 sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8 -d "your_device_name"
+uv run whispypy --engine parakeet_onnx_int8 sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8 -d "your_device_name"
 
 # With specific Whisper model (loads device from config)
-uv run python whispypy-daemon.py large-v3
+uv run whispypy large-v3
 
 # With additional options (loads device from config)
-uv run python whispypy-daemon.py --keep-audio
+uv run whispypy --keep-audio
 
 # Update to different device
-uv run python whispypy-daemon.py --device "new_device_name_here"
+uv run whispypy --device "new_device_name_here"
 ```
 
 > **Note:** When you specify a device with `--device`, it's automatically saved to `~/.config/whispypy/config.conf`. Future runs without `--device` will use the saved device configuration.
@@ -289,10 +289,10 @@ kill -SIGINT 12345
 - No arguments needed - automatically discovers and tests devices
 - Interactive menu for device selection
 
-#### whispypy-daemon.py
+#### whispypy
 
 ```text
-usage: whispypy-daemon.py [-h] [--engine {whisper,parakeet,parakeet_onnx_int8}] [--parakeet-onnx-dir PARAKEET_ONNX_DIR] [--parakeet-onnx-model-id PARAKEET_ONNX_MODEL_ID] [--parakeet-onnx-cache-dir PARAKEET_ONNX_CACHE_DIR] [--onnx-provider {cpu,cuda}] [--onnx-threads ONNX_THREADS] [--check-model] [--device DEVICE] [--keep-audio] [--autopaste] [--verbose] [model_path]
+usage: whispypy [-h] [--engine {whisper,parakeet,parakeet_onnx_int8}] [--parakeet-onnx-dir PARAKEET_ONNX_DIR] [--parakeet-onnx-model-id PARAKEET_ONNX_MODEL_ID] [--parakeet-onnx-cache-dir PARAKEET_ONNX_CACHE_DIR] [--onnx-provider {cpu,cuda}] [--onnx-threads ONNX_THREADS] [--check-model] [--device DEVICE] [--keep-audio] [--autopaste] [--verbose] [model_path]
 
 Arguments:
   model_path           Model path or name. For Whisper: tiny, base, small, medium, large, large-v2, large-v3. For Parakeet: nvidia/parakeet-tdt-0.6b-v3. For parakeet_onnx_int8: optional sherpa-onnx bundle id (omit or use "base" to use default from --parakeet-onnx-model-id)
@@ -320,57 +320,57 @@ Options:
 uv run python test_audio_devices.py
 
 # 2. Copy the working device name and run daemon (saves config)
-uv run python whispypy-daemon.py -d "your_working_device_name"
+uv run whispypy -d "your_working_device_name"
 
 # 3. Next time, just run without device (uses saved config)
-uv run python whispypy-daemon.py
+uv run whispypy
 ```
 
 #### Engine Selection
 
 ```bash
 # Default Whisper engine with base model
-uv run python whispypy-daemon.py
+uv run whispypy
 
 # Whisper with larger model
-uv run python whispypy-daemon.py large-v3
+uv run whispypy large-v3
 
 # Parakeet engine (requires NeMo installation)
-uv run python whispypy-daemon.py --engine parakeet nvidia/parakeet-tdt-0.6b-v3
+uv run whispypy --engine parakeet nvidia/parakeet-tdt-0.6b-v3
 
 # Parakeet with device specification (first time)
-uv run python whispypy-daemon.py -e parakeet nvidia/parakeet-tdt-0.6b-v3 -d "your_device"
+uv run whispypy -e parakeet nvidia/parakeet-tdt-0.6b-v3 -d "your_device"
 
 # Parakeet INT8 via Sherpa-ONNX (auto-download model bundle on first run)
-uv run python whispypy-daemon.py --engine parakeet_onnx_int8
+uv run whispypy --engine parakeet_onnx_int8
 
 # Parakeet INT8 via Sherpa-ONNX (explicit bundle id as positional argument)
-uv run python whispypy-daemon.py --engine parakeet_onnx_int8 sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
+uv run whispypy --engine parakeet_onnx_int8 sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
 
 # Parakeet INT8 via Sherpa-ONNX (prefer CUDA; falls back to CPU)
-uv run python whispypy-daemon.py --engine parakeet_onnx_int8 --onnx-provider cuda
+uv run whispypy --engine parakeet_onnx_int8 --onnx-provider cuda
 ```
 
 #### Advanced Usage
 
 ```bash
 # First setup with larger model (saves device config)
-uv run python whispypy-daemon.py large-v3 -d "your_device" --verbose
+uv run whispypy large-v3 -d "your_device" --verbose
 
 # Subsequent runs with same config
-uv run python whispypy-daemon.py large-v3 --verbose
+uv run whispypy large-v3 --verbose
 
 # Keep audio files for debugging (uses saved device)
-uv run python whispypy-daemon.py --keep-audio
+uv run whispypy --keep-audio
 
 # Auto-paste transcribed text directly (copies to clipboard AND pastes automatically)
-uv run python whispypy-daemon.py --autopaste
+uv run whispypy --autopaste
 
 # Combine autopaste with other options
-uv run python whispypy-daemon.py large-v3 --autopaste --verbose
+uv run whispypy large-v3 --autopaste --verbose
 
 # Parakeet with verbose logging
-uv run python whispypy-daemon.py -e parakeet nvidia/parakeet-tdt-0.6b-v3 --verbose
+uv run whispypy -e parakeet nvidia/parakeet-tdt-0.6b-v3 --verbose
 ```
 
 #### Auto-Paste Feature
@@ -422,7 +422,7 @@ The daemon automatically saves your audio device configuration to `~/.config/whi
 **Configuration behavior:**
 
 - **First run:** Use `--device "your_device_name"` to save the device
-- **Subsequent runs:** Simply run `uv run python whispypy-daemon.py` - device loads automatically
+- **Subsequent runs:** Simply run `uv run whispypy` - device loads automatically
 - **Change device:** Use `--device "new_device_name"` to update the saved configuration
 
 **Config file format:**
