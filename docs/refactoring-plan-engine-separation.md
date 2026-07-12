@@ -165,7 +165,7 @@ from typing import Any
 from .base import TranscriptionEngine
 from .whisper_engine import WhisperEngine
 from .parakeet_engine import ParakeetEngine
-from .parakeet_onnx_engine import ParakeetOnnxEngine
+from .parakeet_onnx_engine import ParakeetOnnxEngine, DEFAULT_SHERPA_ONNX_PARAKEET_INT8_MODEL
 
 def create_engine(
     engine_type: str,
@@ -296,15 +296,15 @@ The daemon class becomes a pure orchestrator, handling audio device management a
     A new private method is added to handle the conversion from raw PipeWire-recorded samples to a standard WAV file. This requires a new dependency, `soundfile`.
 
     ```python
-    def _convert_raw_to_wav(self, raw_path: Path, wav_path: Path, sample_format: str):
-        """Converts a raw audio file to WAV format."""
+    def _convert_raw_to_wav(self, raw_path: Path, wav_path: Path, sample_format: str) -> bool:
+        """Converts a raw audio file to WAV format. Returns True on success, False on failure."""
         try:
             import soundfile as sf
             import numpy as np
         except ImportError:
             logging.error("The 'soundfile' and 'numpy' libraries are required for PipeWire recordings.")
             logging.error("Please install them with: pip install soundfile numpy")
-            return
+            return False
 
         dtype = np.float32 if sample_format == 'f32' else np.int16
         try:
@@ -315,8 +315,10 @@ The daemon class becomes a pure orchestrator, handling audio device management a
             subtype = 'FLOAT' if sample_format == 'f32' else 'PCM_16'
             sf.write(wav_path, data, SAMPLE_RATE, subtype=subtype)
             logging.info(f"Successfully converted {raw_path} to {wav_path}")
+            return True
         except Exception as e:
             logging.error(f"Failed to convert raw audio to WAV: {e}")
+            return False
 
     ```
 
@@ -332,9 +334,11 @@ The daemon class becomes a pure orchestrator, handling audio device management a
         # If we recorded from PipeWire, convert the raw file to WAV.
         if self.temp_raw_file and self.temp_raw_file.exists():
             pw_format = self.engine.get_pipewire_format()
-            self._convert_raw_to_wav(self.temp_raw_file, self.temp_audio_file, pw_format)
+            converted = self._convert_raw_to_wav(self.temp_raw_file, self.temp_audio_file, pw_format)
             if not self.keep_audio:
                 self.temp_raw_file.unlink()
+            if not converted:
+                return
 
         # Transcribe the final WAV file.
         logging.info("Transcribing...")
@@ -355,8 +359,9 @@ The daemon class becomes a pure orchestrator, handling audio device management a
     ```python
     def validate_device(self) -> bool:
         """Validate that the audio device exists and is accessible."""
-        # The test now always uses the .wav extension.
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as test_file:
+        # ALSA records a WAV container; PipeWire records raw samples.
+        suffix = ".wav" if self._is_alsa_device() else ".raw"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as test_file:
             test_file_path = test_file.name
         
         try:
