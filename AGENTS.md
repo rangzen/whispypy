@@ -170,6 +170,10 @@ When working with this project, AI agents should:
 
 #### Adding a New Transcription Engine
 
+> **Note:** An engine-separation refactoring is planned.
+> See `docs/refactoring-plan-engine-separation.md` for the target architecture.
+> The steps below describe the current (pre-refactoring) approach.
+
 1. Add engine detection in `WhispypyDaemon.__init__()`
 2. Implement `_load_<engine>_model()` method
 3. Update `_transcribe_audio()` to handle new engine
@@ -279,6 +283,7 @@ whispypy/
 ├── AGENTS.md                   # This file
 ├── assets/                     # Audio beeps and resources
 ├── docs/                       # Additional documentation
+│   └── refactoring-plan-engine-separation.md  # Planned engine-separation refactoring
 └── src/whispypy/              # Package structure (currently empty)
 ```
 
