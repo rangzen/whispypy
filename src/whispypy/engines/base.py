@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+SAMPLE_RATE = 16000  # Hz - the sample rate all engines expect and all recordings are standardized to
+
 
 class TranscriptionEngine(ABC):
     """Abstract base class for transcription engines."""

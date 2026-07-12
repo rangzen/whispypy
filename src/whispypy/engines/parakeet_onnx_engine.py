@@ -10,7 +10,7 @@ import wave
 
 import numpy as np
 
-from .base import TranscriptionEngine
+from .base import SAMPLE_RATE, TranscriptionEngine
 
 DEFAULT_SHERPA_ONNX_PARAKEET_INT8_MODEL = (
     "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
@@ -162,7 +162,7 @@ class SherpaOnnxParakeetInt8Transcriber:
             joiner=str(joiner),
             tokens=str(tokens),
             num_threads=self.num_threads,
-            sample_rate=16000,
+            sample_rate=SAMPLE_RATE,
             feature_dim=80,
             decoding_method="greedy_search",
             model_type="nemo_transducer",

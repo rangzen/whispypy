@@ -3,6 +3,7 @@ from pathlib import Path
 import time
 from typing import Any
 
+import soundfile as sf
 import whisper
 
 from .base import TranscriptionEngine
@@ -23,7 +24,7 @@ class WhisperEngine(TranscriptionEngine):
 
     def transcribe(self, audio_file: Path) -> str:
         """Transcribe a WAV file using Whisper."""
-        samples = whisper.load_audio(str(audio_file))
+        samples, _ = sf.read(str(audio_file), dtype="float32")
         result = self.model.transcribe(
             samples, fp16=False, language=None, task="transcribe"
         )

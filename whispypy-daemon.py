@@ -15,7 +15,7 @@ import tempfile
 import time
 from typing import Any, Generator, Optional
 
-from src.whispypy.engines.base import TranscriptionEngine
+from src.whispypy.engines.base import SAMPLE_RATE, TranscriptionEngine
 from src.whispypy.engines.parakeet_onnx_engine import (
     DEFAULT_SHERPA_ONNX_PARAKEET_INT8_MODEL,
 )
@@ -25,7 +25,6 @@ BEEP_START_FILENAME = "BEEPTimer_Montre_numerique_bip_2_ID_2255_LS.wav"
 BEEP_COMPLETE_FILENAME = "BEEPTimer_Montre_numerique_bip_1_ID_2254_LS.wav"
 
 # Audio recording constants
-SAMPLE_RATE = 16000  # Hz - Whisper's expected sample rate
 CHANNELS = 1  # Mono audio
 
 # Timing and validation constants
