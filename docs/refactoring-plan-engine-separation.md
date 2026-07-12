@@ -81,6 +81,7 @@ The implementation is much cleaner, as it no longer deals with raw audio formats
 
 ```python
 import whisper
+import soundfile as sf
 import logging
 import time
 from pathlib import Path
@@ -101,8 +102,9 @@ class WhisperEngine(TranscriptionEngine):
 
     def transcribe(self, audio_file: Path) -> str:
         """Transcribe a WAV file using Whisper."""
-        # whisper.load_audio can handle WAV files directly.
-        samples = whisper.load_audio(str(audio_file))
+        # sf.read avoids whisper.load_audio()'s implicit dependency on the
+        # ffmpeg binary, which isn't otherwise required by this project.
+        samples, _ = sf.read(str(audio_file), dtype="float32")
         result = self.model.transcribe(
             samples, fp16=False, language=None, task="transcribe"
         )
@@ -254,7 +256,7 @@ The daemon class becomes a pure orchestrator, handling audio device management a
 
 2.  **Remove Engine-Specific Load Methods**:
     - Delete `_load_whisper_model()`, `_load_parakeet_model()`, and `_load_parakeet_onnx_int8_model()`. This logic is now encapsulated in the engine classes and called from the main entry point.
-    - Delete the module-level helpers `load_audio_f32` and `load_audio_s16_as_f32` (lines 475-497). These exist solely to handle Whisper's raw-sample-loading path, which is replaced by `whisper.load_audio()` on the standardized WAV file. They become unreachable dead code after the refactor.
+    - Delete the module-level helpers `load_audio_f32` and `load_audio_s16_as_f32` (lines 475-497). These exist solely to handle Whisper's raw-sample-loading path, which is replaced by reading the standardized WAV file with `soundfile` (not `whisper.load_audio()`, which shells out to `ffmpeg` and would add an undeclared system dependency). They become unreachable dead code after the refactor.
 
 3.  **Simplify `_start_recording()`**:
     This method now handles two cases: direct WAV recording with ALSA, or raw sample recording with PipeWire, which will be converted later.

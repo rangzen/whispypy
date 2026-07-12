@@ -261,7 +261,7 @@ The daemon will show its PID and wait for signals:
 Script PID: 12345
 To send signal from another terminal: kill -USR2 12345
 Using audio device: alsa_input.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__hw_sofhdadsp_6__source
-Using transcription engine: whisper
+Using transcription engine: WhisperEngine
 Ready. Send SIGUSR2 to start/stop recording.
 ```
 
