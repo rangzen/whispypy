@@ -11,3 +11,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Lavish review artifacts (generated on demand, not committed)
+.lavish/
