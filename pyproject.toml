@@ -13,6 +13,10 @@ dependencies = [
 [project.optional-dependencies]
 parakeet-onnx = [
     "sherpa-onnx",
+    # sherpa-onnx's published wheel metadata omits this runtime dependency (only the
+    # aggregate release metadata lists it), so resolvers relying on per-wheel metadata
+    # silently drop it, leaving libonnxruntime.so missing at import time. Pin it explicitly.
+    "sherpa-onnx-core",
 ]
 
 [dependency-groups]
