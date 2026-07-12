@@ -483,10 +483,7 @@ If the daemon fails to record:
 
 ### Audio Format Issues
 
-The daemon automatically handles different audio formats:
-
-- **Whisper**: Uses raw f32 audio data (`.au` files)
-- **Parakeet**: Uses standard audio files (`.wav` files)
+The daemon standardizes all recordings to WAV before handing them to a transcription engine, so audio format handling is consistent across engines.
 
 ### Performance Comparison
 

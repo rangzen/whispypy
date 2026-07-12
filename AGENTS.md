@@ -9,7 +9,7 @@ This is a Python rewrite of the original [whispy](https://github.com/daaku/whisp
 ### Key Capabilities
 
 - Signal-controlled recording (SIGUSR2 to start/stop)
-- Multiple transcription engines (Whisper, NVIDIA Parakeet, Parakeet INT8)
+- Multiple transcription engines (Whisper, NVIDIA Parakeet, Parakeet INT8), each an independent `TranscriptionEngine` implementation
 - Audio device discovery and validation
 - Clipboard integration (Wayland/X11)
 - Auto-paste functionality
@@ -18,28 +18,31 @@ This is a Python rewrite of the original [whispy](https://github.com/daaku/whisp
 
 ## Architecture
 
+The engine-separation refactoring described in `docs/refactoring-plan-engine-separation.md` has been implemented.
+Transcription engines live under `src/whispypy/engines/` as independent `TranscriptionEngine` implementations, and `WhispypyDaemon` is a pure orchestrator: it records audio, standardizes it to WAV, and delegates transcription to whichever engine it was given.
+
 ### Core Components
 
-#### 1. **WhispypyDaemon** (`whispypy-daemon.py:843`)
-The main daemon class that orchestrates the entire transcription workflow.
+#### 1. **WhispypyDaemon** (`whispypy-daemon.py`)
+The main daemon class that orchestrates the recording/transcription workflow.
+It holds a `TranscriptionEngine` instance and never contains engine-specific logic.
 
 **Responsibilities:**
 - Signal handling (SIGINT, SIGUSR2)
-- Audio recording lifecycle management
-- Model loading and transcription
+- Audio recording lifecycle management (ALSA and PipeWire)
+- Converting PipeWire's raw samples to WAV before handing off to the engine
 - Clipboard integration
 - State file management
 - Audio device validation
 
 **Key Methods:**
 - `_handle_sigusr2()`: Toggle recording on/off
-- `_start_recording()`: Initialize audio capture
-- `_stop_recording()`: Stop capture and trigger transcription
-- `_transcribe_audio()`: Process audio through selected engine
-- `_copy_to_clipboard()`: Copy transcribed text to clipboard
-- `_autopaste_text()`: Automatically paste transcribed text
+- `_start_recording()`: Initialize audio capture (WAV via ALSA, raw samples via PipeWire)
+- `_convert_raw_to_wav()`: Convert PipeWire's raw samples to a standard WAV file
+- `_stop_recording_and_transcribe()`: Stop capture, convert if needed, and call `self.engine.transcribe()`
+- `validate_device()`: Verify the configured audio device is accessible
 
-#### 2. **ConfigManager** (`whispypy-daemon.py:294`)
+#### 2. **ConfigManager** (`whispypy-daemon.py`)
 Manages persistent configuration with caching and validation.
 
 **Responsibilities:**
@@ -55,39 +58,33 @@ Manages persistent configuration with caching and validation.
 - `load_dotool_layout()`: Get keyboard layout for dotool
 - `validate_config()`: Validate configuration format and values
 
-#### 3. **SherpaOnnxParakeetInt8Transcriber** (`whispypy-daemon.py:164`)
-Wrapper for NVIDIA Parakeet INT8 model using Sherpa-ONNX runtime.
-
-**Responsibilities:**
-- ONNX model initialization
-- Audio preprocessing for Parakeet
-- Transcription via Sherpa-ONNX recognizer
-- Thread management for ONNX inference
-
-**Key Methods:**
-- `transcribe()`: Process audio file and return transcription
-- `_load_audio()`: Load and preprocess WAV audio
+#### 3. **Transcription Engines** (`src/whispypy/engines/`)
+Each engine is an independent implementation of the `TranscriptionEngine` ABC (`src/whispypy/engines/base.py`), with just three methods: `load_model()`, `transcribe(audio_file: Path) -> str`, and `get_pipewire_format()`.
+`src/whispypy/engines/factory.py` builds the right engine from `--engine` and its associated CLI args.
+`SherpaOnnxParakeetInt8Transcriber` and the sherpa-onnx model auto-download helpers live in `src/whispypy/engines/parakeet_onnx_engine.py`, since they're only ever used by that engine.
 
 ### Transcription Engines
 
-#### 1. **Whisper** (Default)
+#### 1. **Whisper** (Default) - `src/whispypy/engines/whisper_engine.py`
 - **Models:** tiny, base, small, medium, large, large-v2, large-v3
-- **Format:** .au files (Sun Audio format)
 - **Dependencies:** openai-whisper
+- **PipeWire format:** f32
 - **Use Case:** General-purpose, works out of the box
 
-#### 2. **NVIDIA Parakeet**
+#### 2. **NVIDIA Parakeet** - `src/whispypy/engines/parakeet_engine.py`
 - **Model:** nvidia/parakeet-tdt-0.6b-v3
-- **Format:** .wav files
 - **Dependencies:** nemo_toolkit[asr]
+- **PipeWire format:** f32
 - **Use Case:** High-performance ASR with GPU support
 
-#### 3. **NVIDIA Parakeet INT8 (Sherpa-ONNX)**
+#### 3. **NVIDIA Parakeet INT8 (Sherpa-ONNX)** - `src/whispypy/engines/parakeet_onnx_engine.py`
 - **Model:** sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
-- **Format:** .wav files
 - **Dependencies:** sherpa-onnx
+- **PipeWire format:** s16
 - **Use Case:** CPU-friendly quantized model
 - **Auto-download:** Model bundle downloaded on first run
+
+All engines receive a standardized WAV file; none of them deal with ALSA/PipeWire or raw sample formats directly.
 
 ### Audio Pipeline
 
@@ -100,12 +97,12 @@ Wrapper for NVIDIA Parakeet INT8 model using Sherpa-ONNX runtime.
 2. **Audio Capture:**
    - Sample rate: 16000 Hz (Whisper's expected rate)
    - Channels: 1 (mono)
-   - Format: f32 (32-bit float for PipeWire) or S16_LE (ALSA)
+   - ALSA records S16_LE directly into a WAV container
+   - PipeWire records raw samples in the engine's declared format (`f32` or `s16`, via `engine.get_pipewire_format()`)
 
 3. **Audio Processing:**
-   - Whisper: Direct .au file processing
-   - Parakeet: WAV file with proper headers
-   - Parakeet INT8: WAV file loaded as float32 numpy array
+   - ALSA recordings are already WAV; passed straight to `engine.transcribe()`
+   - PipeWire recordings are converted to WAV by `WhispypyDaemon._convert_raw_to_wav()` (requires `soundfile` and `numpy`) before being passed to `engine.transcribe()`
 
 #### State Management
 - **Recording State:** `/tmp/whispypy_recording`
@@ -151,7 +148,7 @@ Wrapper for NVIDIA Parakeet INT8 model using Sherpa-ONNX runtime.
 - **MyPy:** Static type checking (`mypy.ini`)
 
 ### Dependencies
-- **Core:** openai-whisper
+- **Core:** openai-whisper, soundfile, numpy
 - **Optional:** nemo_toolkit[asr], sherpa-onnx
 - **Dev:** mypy, ruff, types-requests
 
@@ -170,22 +167,20 @@ When working with this project, AI agents should:
 
 #### Adding a New Transcription Engine
 
-> **Note:** An engine-separation refactoring is planned.
-> See `docs/refactoring-plan-engine-separation.md` for the target architecture.
-> The steps below describe the current (pre-refactoring) approach.
-
-1. Add engine detection in `WhispypyDaemon.__init__()`
-2. Implement `_load_<engine>_model()` method
-3. Update `_transcribe_audio()` to handle new engine
-4. Add appropriate audio format handling
+1. Create a new module in `src/whispypy/engines/` implementing the `TranscriptionEngine` ABC (`load_model()`, `transcribe()`, `get_pipewire_format()`)
+2. Register it in `src/whispypy/engines/factory.py`'s `create_engine()`
+3. Add any engine-specific CLI arguments in `main()` and thread them through to the factory call
+4. Add an availability check in `main()` if the engine has optional dependencies (see the `nemo`/`sherpa_onnx` `importlib.util.find_spec` checks)
 5. Update README.md with installation instructions
+
+No changes to `WhispypyDaemon` are needed: it only calls `engine.load_model()`, `engine.transcribe()`, and `engine.get_pipewire_format()`.
 
 #### Modifying Audio Pipeline
 
 1. Check constants at top of `whispypy-daemon.py`:
-   - `SAMPLE_RATE`, `CHANNELS`, `AUDIO_FORMAT`
-2. Update recording methods: `_start_recording()`, `_stop_recording()`
-3. Ensure compatibility with all transcription engines
+   - `SAMPLE_RATE`, `CHANNELS`
+2. Update recording methods: `_start_recording()`, `_stop_recording_and_transcribe()`, `_convert_raw_to_wav()`
+3. Ensure compatibility with all transcription engines (they only ever see the final WAV file)
 4. Test with both PipeWire and ALSA
 
 #### Adding Configuration Options
@@ -206,7 +201,10 @@ When working with this project, AI agents should:
 
 ### Key Files
 
-- **whispypy-daemon.py**: Main daemon implementation (1402 lines)
+- **whispypy-daemon.py**: Main daemon implementation (recording, device handling, orchestration)
+- **src/whispypy/engines/base.py**: `TranscriptionEngine` ABC
+- **src/whispypy/engines/whisper_engine.py**, **parakeet_engine.py**, **parakeet_onnx_engine.py**: Engine implementations
+- **src/whispypy/engines/factory.py**: `create_engine()` factory
 - **test_audio_devices.py**: Device discovery and testing utility
 - **config.conf.example**: Configuration template
 - **pyproject.toml**: Project metadata and dependencies
@@ -227,9 +225,9 @@ signal.signal(signal.SIGUSR2, self._handle_sigusr2)
 - Graceful error handling with ImportError
 
 #### Audio Format Handling
-- Engine-specific format selection (.au vs .wav)
-- Proper WAV headers for Parakeet engines
-- Float32 conversion for ONNX models
+- All recordings are standardized to WAV before reaching an engine
+- ALSA records WAV directly; PipeWire records raw samples that get converted via `_convert_raw_to_wav()`
+- Each engine declares its preferred PipeWire sample format (`f32` or `s16`) via `get_pipewire_format()`
 
 #### State Files
 - Created/removed to signal recording state
@@ -256,7 +254,7 @@ signal.signal(signal.SIGUSR2, self._handle_sigusr2)
 
 ### Common Pitfalls
 
-1. **Audio Format Mismatch:** Ensure engine-specific format handling
+1. **Audio Format Mismatch:** The daemon must record in the format the active engine declares via `get_pipewire_format()`
 2. **Device Validation:** Always validate before recording
 3. **Signal Handling:** Proper cleanup in signal handlers
 4. **Model Loading:** Handle ImportError for optional dependencies
@@ -265,7 +263,7 @@ signal.signal(signal.SIGUSR2, self._handle_sigusr2)
 
 ### Extension Points
 
-- **New Engines:** Add to engine selection logic
+- **New Engines:** Add a new module under `src/whispypy/engines/` and register it in `factory.py`
 - **Audio Backends:** Extend device discovery
 - **Clipboard Backends:** Add new clipboard tools
 - **Configuration:** Extend ConfigManager
@@ -275,7 +273,7 @@ signal.signal(signal.SIGUSR2, self._handle_sigusr2)
 
 ```
 whispypy/
-├── whispypy-daemon.py          # Main daemon implementation
+├── whispypy-daemon.py          # Main daemon implementation (orchestration, recording, CLI)
 ├── test_audio_devices.py       # Device testing utility
 ├── config.conf.example         # Configuration template
 ├── pyproject.toml              # Project metadata
@@ -283,8 +281,13 @@ whispypy/
 ├── AGENTS.md                   # This file
 ├── assets/                     # Audio beeps and resources
 ├── docs/                       # Additional documentation
-│   └── refactoring-plan-engine-separation.md  # Planned engine-separation refactoring
-└── src/whispypy/              # Package structure (currently empty)
+│   └── refactoring-plan-engine-separation.md  # Engine-separation refactoring plan (implemented)
+└── src/whispypy/engines/       # TranscriptionEngine implementations
+    ├── base.py                 # TranscriptionEngine ABC
+    ├── whisper_engine.py
+    ├── parakeet_engine.py
+    ├── parakeet_onnx_engine.py # Also hosts SherpaOnnxParakeetInt8Transcriber + model auto-download helpers
+    └── factory.py               # create_engine()
 ```
 
 ## Contributing

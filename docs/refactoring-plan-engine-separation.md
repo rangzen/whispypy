@@ -1,5 +1,8 @@
 # Refactoring Plan: Independent Engine Implementations
 
+> **Status: Implemented.**
+> The architecture described below is now in place under `src/whispypy/engines/` and in `whispypy-daemon.py`.
+
 ## Overview
 
 This document outlines a comprehensive refactoring plan to separate the three transcription engines (Whisper, Parakeet, and Parakeet INT8) into independent implementations with a clean interface-based architecture.
