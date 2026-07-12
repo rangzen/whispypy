@@ -52,6 +52,7 @@ TERMINAL_KEYWORDS = [
 RECORDING_STATE_FILE = Path("/tmp/whispypy_recording")
 READY_STATE_FILE = Path("/tmp/whispypy_ready")
 
+
 def get_config_file() -> Path:
     """Get the configuration file path following XDG Base Directory specification."""
     xdg_config_home = os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")
@@ -139,7 +140,9 @@ class ConfigManager:
     def load_dotool_variant(self) -> Optional[str]:
         """Load DOTOOL_XKB_VARIANT configuration from config file."""
         return self._load_config_value(
-            "dotool_xkb_variant", "Using dotool XKB variant from config: {value}", "debug"
+            "dotool_xkb_variant",
+            "Using dotool XKB variant from config: {value}",
+            "debug",
         )
 
     def validate_config(self) -> bool:
@@ -149,7 +152,6 @@ class ConfigManager:
             return True  # No config file is valid (will use defaults)
 
         try:
-
             # Check if DEFAULT section exists
             if "DEFAULT" not in config:
                 logging.warning("Configuration file missing DEFAULT section")
@@ -413,7 +415,7 @@ def _detect_terminal_window() -> bool:
                 ["hyprctl", "activewindow", "-j"],
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
             )
             window_info = json.loads(result.stdout)
             window_class = window_info.get("class", "").lower()
@@ -473,7 +475,9 @@ def paste_from_clipboard() -> bool:
         # Use Ctrl+Shift+V for terminals, Ctrl+V for GUI apps
         try:
             if is_terminal:
-                logging.debug("Attempting to paste using wtype with Ctrl+Shift+V (terminal)")
+                logging.debug(
+                    "Attempting to paste using wtype with Ctrl+Shift+V (terminal)"
+                )
                 subprocess.run(["wtype", "-M", "ctrl", "-M", "shift", "v"], check=True)
                 logging.info("Pasted from clipboard (wtype with Ctrl+Shift+V)")
             else:
@@ -491,20 +495,25 @@ def paste_from_clipboard() -> bool:
             # Use key codes: 29 is left ctrl, 42 is left shift, 47 is v
             # Format: "keycode:state" where :1 = key down, :0 = key up
             if is_terminal:
-                logging.debug("Attempting to paste using ydotool with Ctrl+Shift+V (terminal)")
-                subprocess.run(["ydotool", "key", "29:1", "42:1", "47:1", "47:0", "42:0", "29:0"], check=True)
+                logging.debug(
+                    "Attempting to paste using ydotool with Ctrl+Shift+V (terminal)"
+                )
+                subprocess.run(
+                    ["ydotool", "key", "29:1", "42:1", "47:1", "47:0", "42:0", "29:0"],
+                    check=True,
+                )
                 logging.info("Pasted from clipboard (ydotool with Ctrl+Shift+V)")
             else:
                 logging.debug("Attempting to paste using ydotool with Ctrl+V (GUI)")
-                subprocess.run(["ydotool", "key", "29:1", "47:1", "47:0", "29:0"], check=True)
+                subprocess.run(
+                    ["ydotool", "key", "29:1", "47:1", "47:0", "29:0"], check=True
+                )
                 logging.info("Pasted from clipboard (ydotool with Ctrl+V)")
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             # Final fallback: try wl-paste + dotool with layout settings
             try:
-                logging.debug(
-                    "Attempting to paste using dotool with layout settings"
-                )
+                logging.debug("Attempting to paste using dotool with layout settings")
                 # Load dotool configuration
                 config_manager = ConfigManager()
                 dotool_layout = config_manager.load_dotool_layout()
@@ -540,7 +549,9 @@ def paste_from_clipboard() -> bool:
         # Use xdotool for X11 - Ctrl+Shift+V for terminals, Ctrl+V for GUI apps
         try:
             if is_terminal:
-                logging.debug("Attempting to paste using xdotool with Ctrl+Shift+V (terminal)")
+                logging.debug(
+                    "Attempting to paste using xdotool with Ctrl+Shift+V (terminal)"
+                )
                 subprocess.run(["xdotool", "key", "ctrl+shift+v"], check=True)
                 logging.info("Pasted from clipboard (xdotool with Ctrl+Shift+V)")
             else:
@@ -556,7 +567,14 @@ def paste_from_clipboard() -> bool:
     paste_tools = [
         ["xdotool", "key", "ctrl+v"],  # X11
         ["wtype", "-M", "ctrl", "v"],  # Wayland
-        ["ydotool", "key", "29:1", "47:1", "47:0", "29:0"],  # Wayland alternative (ctrl+v)
+        [
+            "ydotool",
+            "key",
+            "29:1",
+            "47:1",
+            "47:0",
+            "29:0",
+        ],  # Wayland alternative (ctrl+v)
     ]
 
     for cmd in paste_tools:
@@ -633,9 +651,7 @@ class WhispypyDaemon:
         try:
             # ALSA records a WAV container directly; PipeWire records raw samples.
             suffix = ".wav" if self._is_alsa_device() else ".raw"
-            with tempfile.NamedTemporaryFile(
-                suffix=suffix, delete=False
-            ) as test_file:
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as test_file:
                 test_file_path = test_file.name
 
             if self._is_alsa_device():
@@ -643,11 +659,16 @@ class WhispypyDaemon:
                 with managed_subprocess(
                     [
                         "arecord",
-                        "-D", self._get_alsa_device(),
-                        "-f", "S16_LE",
-                        "-r", str(SAMPLE_RATE),
-                        "-c", str(CHANNELS),
-                        "-t", "wav",
+                        "-D",
+                        self._get_alsa_device(),
+                        "-f",
+                        "S16_LE",
+                        "-r",
+                        str(SAMPLE_RATE),
+                        "-c",
+                        str(CHANNELS),
+                        "-t",
+                        "wav",
                         test_file_path,
                     ]
                 ) as _:
@@ -729,11 +750,16 @@ class WhispypyDaemon:
             self.temp_raw_file = None
             cmd = [
                 "arecord",
-                "-D", self._get_alsa_device(),
-                "-f", "S16_LE",
-                "-r", str(SAMPLE_RATE),
-                "-c", str(CHANNELS),
-                "-t", "wav",
+                "-D",
+                self._get_alsa_device(),
+                "-f",
+                "S16_LE",
+                "-r",
+                str(SAMPLE_RATE),
+                "-c",
+                str(CHANNELS),
+                "-t",
+                "wav",
                 str(self.temp_audio_file),
             ]
         else:
@@ -761,7 +787,9 @@ class WhispypyDaemon:
         except Exception as e:
             # State file creation failed, but recording is already started
             # Log warning but don't abort - recording is more important
-            logging.warning(f"Failed to create recording state file: {e}", exc_info=True)
+            logging.warning(
+                f"Failed to create recording state file: {e}", exc_info=True
+            )
         logging.info("Recording started successfully")
 
     def _convert_raw_to_wav(
@@ -772,7 +800,9 @@ class WhispypyDaemon:
             import numpy as np
             import soundfile as sf
         except ImportError:
-            logging.error("The 'soundfile' and 'numpy' libraries are required for PipeWire recordings.")
+            logging.error(
+                "The 'soundfile' and 'numpy' libraries are required for PipeWire recordings."
+            )
             logging.error("Please install them with: pip install soundfile numpy")
             return False
 
@@ -806,7 +836,9 @@ class WhispypyDaemon:
         logging.info("Recording stopped")
 
         # Check if the recorded audio file exists and has content.
-        recorded_file = self.temp_raw_file if self.temp_raw_file else self.temp_audio_file
+        recorded_file = (
+            self.temp_raw_file if self.temp_raw_file else self.temp_audio_file
+        )
         if not recorded_file.exists():
             logging.error(f"Audio file {recorded_file} not found!")
             return
@@ -1006,7 +1038,9 @@ def main() -> None:
 
     if args.engine == "parakeet_onnx_int8":
         if importlib.util.find_spec("sherpa_onnx") is None:
-            logging.error("parakeet_onnx_int8 engine selected but sherpa-onnx is not available.")
+            logging.error(
+                "parakeet_onnx_int8 engine selected but sherpa-onnx is not available."
+            )
             sys.exit(1)
 
         model_id = args.parakeet_onnx_model_id

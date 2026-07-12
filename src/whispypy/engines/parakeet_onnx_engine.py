@@ -12,9 +12,7 @@ import numpy as np
 
 from .base import SAMPLE_RATE, TranscriptionEngine
 
-DEFAULT_SHERPA_ONNX_PARAKEET_INT8_MODEL = (
-    "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
-)
+DEFAULT_SHERPA_ONNX_PARAKEET_INT8_MODEL = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
 
 
 def _auto_onnx_threads() -> int:
@@ -31,7 +29,12 @@ def _whispypy_cache_dir() -> Path:
 def _is_valid_parakeet_onnx_dir(model_dir: Path) -> bool:
     return all(
         (model_dir / name).is_file()
-        for name in ("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt")
+        for name in (
+            "encoder.int8.onnx",
+            "decoder.int8.onnx",
+            "joiner.int8.onnx",
+            "tokens.txt",
+        )
     )
 
 
@@ -106,7 +109,9 @@ def ensure_sherpa_onnx_parakeet_model_dir(
 
     # Some archives may not extract to the expected directory name.
     candidates = [
-        p for p in models_root.iterdir() if p.is_dir() and _is_valid_parakeet_onnx_dir(p)
+        p
+        for p in models_root.iterdir()
+        if p.is_dir() and _is_valid_parakeet_onnx_dir(p)
     ]
     if len(candidates) == 1:
         return candidates[0]
@@ -141,9 +146,7 @@ class SherpaOnnxParakeetInt8Transcriber:
         tokens = self.model_dir / "tokens.txt"
 
         missing = [
-            str(p)
-            for p in (encoder, decoder, joiner, tokens)
-            if not p.is_file()
+            str(p) for p in (encoder, decoder, joiner, tokens) if not p.is_file()
         ]
         if missing:
             raise FileNotFoundError(
@@ -151,7 +154,9 @@ class SherpaOnnxParakeetInt8Transcriber:
                 + ", ".join(missing)
             )
 
-        self.num_threads = num_threads if num_threads is not None else _auto_onnx_threads()
+        self.num_threads = (
+            num_threads if num_threads is not None else _auto_onnx_threads()
+        )
         self.provider = provider
 
         model_load_start = time.time()
@@ -194,14 +199,14 @@ class SherpaOnnxParakeetInt8Transcriber:
                 self.provider = "cpu"
                 kwargs["provider"] = "cpu"
                 try:
-                    self.recognizer = self._sherpa_onnx.OfflineRecognizer.from_transducer(
-                        **kwargs
+                    self.recognizer = (
+                        self._sherpa_onnx.OfflineRecognizer.from_transducer(**kwargs)
                     )
                 except TypeError:
                     kwargs.pop("provider", None)
                     kwargs.pop("model_type", None)
-                    self.recognizer = self._sherpa_onnx.OfflineRecognizer.from_transducer(
-                        **kwargs
+                    self.recognizer = (
+                        self._sherpa_onnx.OfflineRecognizer.from_transducer(**kwargs)
                     )
             else:
                 raise
